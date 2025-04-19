@@ -1,0 +1,7 @@
+buildDir
+/subprojects/*
+!/subprojects/*.wrap
+
+iso_root
+
+log.txt
