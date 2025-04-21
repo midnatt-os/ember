@@ -6,3 +6,6 @@ revision = v9.x
 patch_url = https://files.elysium-os.org/meson-patches/limine.zip
 patch_filename = limine.zip
 patch_hash = 3ca4e791d85c63cf4485ae58f87f9048e066d2bf442fb0fcf3573d1b10b04b57
+
+[provide]
+limine = limine_dep

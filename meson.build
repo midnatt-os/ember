@@ -13,6 +13,7 @@ cflags = [
 
     '-Wall',
     '-Wextra',
+    '-Werror',
 
     '-fno-stack-protector',
     '-fno-stack-check',
@@ -48,8 +49,11 @@ deps += dependency(
     fallback: ['freestnd-c-hdrs', 'freestnd_c_hdrs_dep']
 )
 
-limine_sp = subproject('limine')
-deps += limine_sp.get_variable('limine_dep')
+deps += dependency('limine', required: true)
+deps += dependency('nanoprintf', required: true)
+
+#limine_sp = subproject('limine')
+#deps += limine_sp.get_variable('limine_dep')
 
 subdir('kernel')
 

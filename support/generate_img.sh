@@ -1,5 +1,6 @@
 #!/bin/bash
 
+
 rm -rf iso_root
 rm -rf limine
 
@@ -15,4 +16,5 @@ rm -rf limine
 cp support/limine.conf iso_root/  # copy limine.conf
 cp $1 iso_root/  # copy kernel elf
 
+sym_gen $1 iso_root/aloe_symbols.symf
 mkimg --config=support/mkimg_aloe.toml
