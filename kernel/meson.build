@@ -1,5 +1,6 @@
 sources += files(
-    'sys/entry.c',
+    'entry.c',
+    'init.c',
     'sys/stack_trace.c',
     'common/log.c',
     'common/panic.c',
