@@ -5,5 +5,6 @@
     <mapping directory="$PROJECT_DIR$/subprojects/cc-runtime" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/subprojects/freestnd-c-hdrs" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/subprojects/limine" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/subprojects/nanoprintf" vcs="Git" />
   </component>
 </project>

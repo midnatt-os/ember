@@ -62,6 +62,7 @@ aloe = executable(
     sources: sources,
     include_directories: includes,
     c_args: cflags,
+    nasm_args: ['-f elf64', '-Werror'],
     link_args: ldflags,
     dependencies: deps,
 )

@@ -6,9 +6,12 @@ sources += files(
     'common/panic.c',
     'common/lock/spinlock.c',
     'cpu/cpu.c',
+    'cpu/gdt.c',
     'lib/string.c',
     'lib/mem.c',
     'memory/pmm.c',
+)
 
-    # nasm sources
+sources += files(
+    'cpu/gdt.asm'
 )
