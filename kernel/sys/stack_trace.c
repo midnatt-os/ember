@@ -23,7 +23,7 @@ Header* header;
 
 void load_kernel_symbols(Modules* modules) {
     for (size_t i = 0; i < modules->module_count; i++) {
-        if (!string_eq(modules->modules[i].cmdline, "aloe_symbols"))
+        if (!streq(modules->modules[i].cmdline, "aloe_symbols"))
             continue;
 
         header = (Header*) modules->modules[i].address;

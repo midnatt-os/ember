@@ -32,9 +32,9 @@ LIMINE_REQUESTS_END_MARKER
 BootInfo info;
 
 [[noreturn]] void kentry() {
-    ASSERT(hhdm_request.response);
-    ASSERT(memmap_request.response);
-    ASSERT(module_request.response);
+    ASSERT(hhdm_request.response != nullptr);
+    ASSERT(memmap_request.response != nullptr);
+    ASSERT(module_request.response != nullptr);
 
     // HHDM
     info.hhdm_offset = hhdm_request.response->offset;

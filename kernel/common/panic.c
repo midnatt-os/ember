@@ -7,6 +7,7 @@
 
 
 [[noreturn]] void panic(const char *fmt, ...) {
+    // TODO: mask interrupts
     va_list list;
     va_start(list, fmt);
     log_list(LOG_ERROR, "PANIC", fmt, list);
