@@ -18,6 +18,7 @@ LIMINE_BASE_REVISION(3)
 [[gnu::used, gnu::section(".limine_requests")]]
 LIMINE_REQUESTS_START_MARKER
 
+LIMINE_REQUEST(hhdm_request, LIMINE_HHDM_REQUEST, 3)
 LIMINE_REQUEST(memmap_request, LIMINE_MEMMAP_REQUEST, 3)
 LIMINE_REQUEST(module_request, LIMINE_MODULE_REQUEST, 3)
 
@@ -31,8 +32,12 @@ LIMINE_REQUESTS_END_MARKER
 BootInfo info;
 
 [[noreturn]] void kentry() {
+    ASSERT(hhdm_request.response);
     ASSERT(memmap_request.response);
     ASSERT(module_request.response);
+
+    // HHDM
+    info.hhdm_offset = hhdm_request.response->offset;
 
     // Memmap
     for (size_t i = 0; i < memmap_request.response->entry_count; i++) {

@@ -40,6 +40,7 @@ typedef struct {
 /* <-- MODULES */
 
 typedef struct {
+    uintptr_t hhdm_offset;
     Memmap memmap;
     Modules modules;
 } BootInfo;
