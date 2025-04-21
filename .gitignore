@@ -1,10 +1,10 @@
-.idea
+.idea/
 
-buildDir
+buildDir/
 /subprojects/*
 !/subprojects/*.wrap
 
-iso_root
+iso_root/
 
 log.txt
 aloe.img
