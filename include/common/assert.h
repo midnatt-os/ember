@@ -2,6 +2,7 @@
 
 #include "common/panic.h"
 
+// TODO: change to one line (and remove the do-while)
 #define ASSERT(cond) \
     do { \
         if (!(cond)) \

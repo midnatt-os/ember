@@ -2,6 +2,7 @@
 
 #include "stdint.h"
 
+#define MEMMAP_COUNT 64
 #define MODULE_COUNT 64
 
 /* MEMMAP --> */
@@ -18,8 +19,8 @@ typedef struct {
 } MemmapEntry;
 
 typedef struct {
-    MemmapEntry* entries;
-    uint64_t size;
+    MemmapEntry entries[MEMMAP_COUNT];
+    uint64_t entry_count;
 } Memmap;
 /* <-- MEMMAP */
 
@@ -30,9 +31,15 @@ typedef struct {
     char* path;
     char* cmdline;
 } Module;
+
+typedef struct {
+    Module modules[MODULE_COUNT];
+    uint64_t module_count;
+} Modules;
+
 /* <-- MODULES */
 
 typedef struct {
     Memmap memmap;
-    Module modules[MODULE_COUNT];
+    Modules modules;
 } BootInfo;

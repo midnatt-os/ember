@@ -21,12 +21,12 @@ typedef struct [[gnu::packed]] {
 
 Header* header;
 
-void load_kernel_symbols(const Module* modules, size_t module_count) {
-    for (size_t i = 0; i < module_count; i++) {
-        if (!string_eq(modules[i].cmdline, "aloe_symbols"))
+void load_kernel_symbols(Modules* modules) {
+    for (size_t i = 0; i < modules->module_count; i++) {
+        if (!string_eq(modules->modules[i].cmdline, "aloe_symbols"))
             continue;
 
-        header = (Header*) modules[i].address;
+        header = (Header*) modules->modules[i].address;
         ASSERT(header->magic == SYMF_MAGIC);
         return;
     }
