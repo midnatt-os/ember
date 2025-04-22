@@ -37,23 +37,10 @@ ldflags = [
     '-Wl,-T' + meson.project_source_root() / 'support/link_aloe.ld',
 ]
 
-deps += dependency(
-    'cc-runtime',
-    required: true,
-    fallback: ['cc-runtime', 'cc_runtime_deps']
-)
-
-deps += dependency(
-    'freestnd-c-hdrs-' + host_machine.cpu_family(),
-    required: true,
-    fallback: ['freestnd-c-hdrs', 'freestnd_c_hdrs_dep']
-)
-
+deps += dependency('cc-runtime', required: true)
+deps += dependency('freestnd-c-hdrs', required: true)
 deps += dependency('limine', required: true)
 deps += dependency('nanoprintf', required: true)
-
-#limine_sp = subproject('limine')
-#deps += limine_sp.get_variable('limine_dep')
 
 subdir('kernel')
 
