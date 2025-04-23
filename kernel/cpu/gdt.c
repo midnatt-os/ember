@@ -1,4 +1,4 @@
-#include "gdt.h"
+#include "../../include/cpu/gdt.h"
 
 #include "stdint.h"
 
