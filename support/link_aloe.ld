@@ -5,9 +5,9 @@ ENTRY(kentry)
 PHDRS
 {
     limine_requests PT_LOAD;
-    text PT_LOAD;
-    rodata PT_LOAD;
-    data PT_LOAD;
+    text            PT_LOAD FLAGS(RX);
+    rodata          PT_LOAD FLAGS(R);
+    data            PT_LOAD FLAGS(RW);
 }
 
 SECTIONS
@@ -20,28 +20,30 @@ SECTIONS
         KEEP(*(.limine_requests_end))
     } :limine_requests
 
-    . = ALIGN(CONSTANT(MAXPAGESIZE));
-
-    .text : {
+    .text ALIGN(0x1000) : {
+        __TEXT_START = .;
         *(.text .text.*)
+        __TEXT_END = .;
     } :text
 
-    . = ALIGN(CONSTANT(MAXPAGESIZE));
-
-    .rodata : {
+    .rodata ALIGN(0x1000) : {
+        __RODATA_START = .;
         *(.rodata .rodata.*)
+        __RODATA_END = .;
     } :rodata
 
-    . = ALIGN(CONSTANT(MAXPAGESIZE));
-
-    .data : {
+    .data ALIGN(0x1000) : {
+        __DATA_START = .;
         *(.data .data.*)
+        __DATA_END = .;
     } :data
 
-    .bss : {
+    .bss ALIGN(0x1000) : {
+        __BSS_START = .;
         *(.bss .bss.*)
         *(COMMON)
-    } :data
+        __BSS_END = .;
+    } :bss
 
     /DISCARD/ : {
         *(.eh_frame*)
