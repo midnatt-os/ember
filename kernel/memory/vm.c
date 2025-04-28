@@ -3,6 +3,7 @@
 #include "common/assert.h"
 #include "common/log.h"
 #include "cpu/registers.h"
+#include "lib/math.h"
 #include "memory/hhdm.h"
 #include "memory/pmm.h"
 #include "memory/ptm.h"
@@ -40,6 +41,8 @@ static uintptr_t find_space(VmAddressSpace* as, uintptr_t hint, size_t length) {
 
     uintptr_t start = as == &kernel_as ? KERNELSPACE_START : USERSPACE_START;
     uintptr_t end = as == &kernel_as ? KERNELSPACE_END : USERSPACE_END;
+
+    hint = CLAMP(hint, start, end - length);
 
     uintptr_t last_end = start;
     uintptr_t last_valid = 0;
@@ -140,7 +143,7 @@ static void* map_common(VmAddressSpace* as, void* hint, size_t length, paddr_t p
     spinlock_acquire(&as->regions_lock);
 
     address = find_space(as, address, length);
-    if (address == 0 || (address != (uintptr_t) hint && (flags & VM_FLAG_FIXED) != 0)) {
+    if (!address || ((flags & VM_FLAG_FIXED) && address != (uintptr_t)hint)) {
         spinlock_release(&as->regions_lock);
         return nullptr;
     }
