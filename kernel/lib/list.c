@@ -83,3 +83,9 @@ void list_delete(List* list, ListNode* node) {
 
     list->count--;
 }
+
+ListNode* list_pop(List* list) {
+    ListNode* node = list->head;
+    list_delete(list, node);
+    return node;
+}
