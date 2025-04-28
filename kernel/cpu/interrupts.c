@@ -2,6 +2,7 @@
 
 #include <stddef.h>
 
+#include "common/log.h"
 #include "cpu/registers.h"
 #include "common/panic.h"
 #include "common/lock/spinlock.h"
@@ -27,7 +28,7 @@ typedef struct [[gnu::packed]] {
     uint32_t rsv0;
 } IdtEntry;
 
-Spinlock int_handlers_lock = SPINLOCK_INIT;
+Spinlock int_handlers_lock = SPINLOCK_NEW;
 
 static IdtEntry idt_entries[IDT_SIZE];
 static InterruptHandler int_handlers[IDT_SIZE];
@@ -145,4 +146,6 @@ void interrupts_init() {
 
     fill_idt();
     load_idt();
+
+    logln(LOG_INFO, "INTERRUPTS", "Initialized");
 }

@@ -5,7 +5,6 @@
 #define MEMMAP_COUNT 64
 #define MODULE_COUNT 64
 
-/* MEMMAP --> */
 typedef enum {
     MEMMAP_USABLE,
     MEMMAP_RECLAIMABLE,
@@ -22,9 +21,7 @@ typedef struct {
     MemmapEntry entries[MEMMAP_COUNT];
     uint64_t entry_count;
 } Memmap;
-/* <-- MEMMAP */
 
-/* MODULES --> */
 typedef struct {
     void* address;
     uint64_t size;
@@ -37,10 +34,14 @@ typedef struct {
     uint64_t module_count;
 } Modules;
 
-/* <-- MODULES */
+typedef struct {
+    uintptr_t virt_base;
+    uintptr_t phys_base;
+} KernelAddress;
 
 typedef struct {
     uintptr_t hhdm_offset;
     Memmap memmap;
     Modules modules;
+    KernelAddress kernel_addr;
 } BootInfo;

@@ -2,6 +2,7 @@
 
 #include <stddef.h>
 
+#include "common/assert.h"
 #include "common/log.h"
 #include "common/lock/spinlock.h"
 #include "lib/mem.h"
@@ -11,14 +12,17 @@
 
 
 
-Spinlock pmm_lock = SPINLOCK_INIT;
+Spinlock pmm_lock = SPINLOCK_NEW;
 
-static paddr_t free_list_head;
+static paddr_t free_list_head = 0;
 
 paddr_t pmm_alloc(uint64_t flags) {
     spinlock_acquire(&pmm_lock);
 
     paddr_t pf = free_list_head;
+
+    ASSERT(pf != 0);
+
     free_list_head = *((paddr_t*) HHDM(pf));
 
     if ((flags & PMM_ZERO) != 0)

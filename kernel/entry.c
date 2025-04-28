@@ -21,6 +21,7 @@ LIMINE_REQUESTS_START_MARKER
 LIMINE_REQUEST(hhdm_request, LIMINE_HHDM_REQUEST, 3)
 LIMINE_REQUEST(memmap_request, LIMINE_MEMMAP_REQUEST, 3)
 LIMINE_REQUEST(module_request, LIMINE_MODULE_REQUEST, 3)
+LIMINE_REQUEST(kernel_address_request, LIMINE_KERNEL_ADDRESS_REQUEST, 3)
 
 [[gnu::used, gnu::section(".limine_requests")]]
 LIMINE_REQUESTS_END_MARKER
@@ -35,6 +36,7 @@ BootInfo info;
     ASSERT(hhdm_request.response != nullptr);
     ASSERT(memmap_request.response != nullptr);
     ASSERT(module_request.response != nullptr);
+    ASSERT(kernel_address_request.response != nullptr);
 
     // HHDM
     info.hhdm_offset = hhdm_request.response->offset;
@@ -72,6 +74,12 @@ BootInfo info;
             .cmdline = file->cmdline, // TODO: maybe strcpy?
         };
     }
+
+    // Kernel address
+    info.kernel_addr = (KernelAddress) {
+        .virt_base = kernel_address_request.response->virtual_base,
+        .phys_base =  kernel_address_request.response->physical_base
+    };
 
     kinit(&info);
 }

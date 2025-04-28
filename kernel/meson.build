@@ -10,7 +10,10 @@ sources += files(
     'cpu/interrupts.c',
     'lib/string.c',
     'lib/mem.c',
+    'lib/list.c',
     'memory/pmm.c',
+    'memory/ptm.c',
+    'memory/vm.c',
 )
 
 sources += files(
