@@ -29,7 +29,10 @@ cflags = [
     '-mcmodel=kernel',
     '-mno-red-zone',
     '-mgeneral-regs-only',
-    '-mabi=sysv'
+    '-mabi=sysv',
+
+    '-DUACPI_BAREBONES_MODE',
+    '-DUACPI_FORMATTED_LOGGING',
 ]
 
 ldflags = [
@@ -42,6 +45,10 @@ deps += dependency('cc-runtime', required: true)
 deps += dependency('freestnd-c-hdrs', required: true)
 deps += dependency('limine', required: true)
 deps += dependency('nanoprintf', required: true)
+
+uacpi = subproject('uacpi')
+sources += uacpi.get_variable('sources')
+includes += uacpi.get_variable('includes')
 
 subdir('kernel')
 

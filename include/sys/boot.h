@@ -44,4 +44,5 @@ typedef struct {
     Memmap memmap;
     Modules modules;
     KernelAddress kernel_addr;
+    uintptr_t rsdp_address;
 } BootInfo;

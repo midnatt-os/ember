@@ -22,6 +22,7 @@ LIMINE_REQUEST(hhdm_request, LIMINE_HHDM_REQUEST, 3)
 LIMINE_REQUEST(memmap_request, LIMINE_MEMMAP_REQUEST, 3)
 LIMINE_REQUEST(module_request, LIMINE_MODULE_REQUEST, 3)
 LIMINE_REQUEST(kernel_address_request, LIMINE_KERNEL_ADDRESS_REQUEST, 3)
+LIMINE_REQUEST(rsdp_request, LIMINE_RSDP_REQUEST, 3)
 
 [[gnu::used, gnu::section(".limine_requests")]]
 LIMINE_REQUESTS_END_MARKER
@@ -37,6 +38,7 @@ BootInfo info;
     ASSERT(memmap_request.response != nullptr);
     ASSERT(module_request.response != nullptr);
     ASSERT(kernel_address_request.response != nullptr);
+    ASSERT(rsdp_request.response != nullptr);
 
     // HHDM
     info.hhdm_offset = hhdm_request.response->offset;
@@ -80,6 +82,8 @@ BootInfo info;
         .virt_base = kernel_address_request.response->virtual_base,
         .phys_base =  kernel_address_request.response->physical_base
     };
+
+    info.rsdp_address = (uintptr_t) rsdp_request.response->address;
 
     kinit(&info);
 }
