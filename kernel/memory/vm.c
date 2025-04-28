@@ -330,9 +330,6 @@ void vm_init(KernelAddress kernel_addr, Memmap memmap) {
     for (size_t i = 0; i < memmap.entry_count; i++) {
         MemmapEntry entry = memmap.entries[i];
 
-        if (entry.type == MEMMAP_OTHER)
-            continue;
-
         vm_map_direct(
             &kernel_as,
             (void*) HHDM(entry.base),
