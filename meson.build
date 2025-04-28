@@ -14,6 +14,7 @@ cflags = [
     '-Wall',
     '-Wextra',
     '-Werror',
+    '-Wimplicit-fallthrough',
 
     '-fno-stack-protector',
     '-fno-stack-check',
