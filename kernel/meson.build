@@ -2,6 +2,7 @@ sources += files(
     'entry.c',
     'init.c',
     'sys/stack_trace.c',
+    'sys/time.c',
     'common/log.c',
     'common/panic.c',
     'common/lock/spinlock.c',
