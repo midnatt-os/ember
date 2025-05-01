@@ -44,8 +44,8 @@ void list_node_prepend(List* list, ListNode* position, ListNode* node) {
 
 void list_append(List* list, ListNode* node) {
     if (list_is_empty(list)) {
-        list->head = node;
-        list->tail = node;
+        list->head = list->tail = node;
+        node->next = node->prev = nullptr;
         list->count++;
 
         return;
@@ -56,8 +56,8 @@ void list_append(List* list, ListNode* node) {
 
 void list_prepend(List* list, ListNode* node) {
     if (list_is_empty(list)) {
-        list->head = node;
-        list->tail = node;
+        list->head = list->tail = node;
+        node->next = node->prev = nullptr;
         list->count++;
 
         return;
@@ -81,10 +81,13 @@ void list_delete(List* list, ListNode* node) {
     if (node->next != nullptr)
         node->next->prev = node->prev;
 
+    node->next = node->prev = nullptr;
     list->count--;
 }
 
 ListNode* list_pop(List* list) {
+    ASSERT(!list_is_empty(list));
+
     ListNode* node = list->head;
     list_delete(list, node);
     return node;
