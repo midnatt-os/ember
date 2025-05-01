@@ -17,6 +17,7 @@ sources += files(
     'memory/vm.c',
     'memory/heap.c',
     'dev/acpi.c',
+    'dev/hpet.c',
 )
 
 sources += files(

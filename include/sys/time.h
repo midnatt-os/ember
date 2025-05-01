@@ -4,7 +4,6 @@
 
 typedef struct {
     char* name;
-    uint64_t resolution;
     uint64_t (*current)();
 } TimeSource;
 
@@ -16,3 +15,4 @@ static inline uint64_t ns_to_s (uint64_t ns) { return ns / 1000000000; }
 void time_register_source(TimeSource* source);
 
 uint64_t time_current();
+void time_init();

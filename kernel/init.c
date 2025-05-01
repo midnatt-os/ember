@@ -8,7 +8,7 @@
 #include "sys/boot.h"
 #include "sys/stack_trace.h"
 #include "dev/acpi.h"
-
+#include "sys/time.h"
 
 
 uintptr_t g_hhdm_offset;
@@ -29,6 +29,8 @@ uintptr_t g_hhdm_offset;
     heap_init();
 
     acpi_init(boot_info->rsdp_address);
+
+    time_init();
 
     while (true)
         cpu_halt();
