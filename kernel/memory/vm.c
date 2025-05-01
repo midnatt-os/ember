@@ -9,6 +9,7 @@
 #include "memory/ptm.h"
 
 #define MIN(A, B) (A < B ? A : B)
+#define REGION_INTERSECTS(BASE1, LENGTH1, BASE2, LENGTH2) ((BASE1) < ((BASE2) + (LENGTH2)) && (BASE2) < ((BASE1) + (LENGTH1)))
 
 typedef uint8_t LinkerSymbol[];
 
@@ -23,6 +24,7 @@ VmAddressSpace kernel_as;
 
 List region_pool = LIST_NEW;
 
+
 static void region_insert(VmAddressSpace* as, VmRegion* region) {
     LIST_FOREACH(as->regions, node) {
         VmRegion* current = LIST_ELEMENT_OF(node, VmRegion, list_node);
@@ -36,73 +38,58 @@ static void region_insert(VmAddressSpace* as, VmRegion* region) {
     list_append(&as->regions, &region->list_node);
 }
 
-static uintptr_t find_space(VmAddressSpace* as, uintptr_t hint, size_t length) {
-    ASSERT(length % PAGE_SIZE == 0);
+static uintptr_t find_space(VmAddressSpace* as, uintptr_t hint, size_t length, bool fixed) {
+    uintptr_t as_start = as == &kernel_as ? KERNELSPACE_START : USERSPACE_START;
+    uintptr_t as_end = as == &kernel_as ? KERNELSPACE_END : USERSPACE_END;
 
-    uintptr_t start = as == &kernel_as ? KERNELSPACE_START : USERSPACE_START;
-    uintptr_t end = as == &kernel_as ? KERNELSPACE_END : USERSPACE_END;
+    if (hint) {
+        LIST_FOREACH(as->regions, node) {
+            VmRegion* r = REGION_OF(node);
 
-    hint = CLAMP(hint, start, end - length);
+            if (!REGION_INTERSECTS(hint, length, r->base, r->length))
+                continue;
 
-    uintptr_t last_end = start;
-    uintptr_t last_valid = 0;
+            if (fixed)
+                return 0;
+
+            hint = 0;
+            break;
+        }
+
+        if (hint != 0)
+            return hint;
+    }
+
+    uintptr_t candidate = as_start;
 
     LIST_FOREACH(as->regions, node) {
-        VmRegion* region = REGION_OF(node);
+        VmRegion* r = REGION_OF(node);
 
-        if (last_valid != 0 && last_end > hint)
-            break;
-
-        if (region->base - last_end >= length)
-            last_valid = last_end;
-
-        if (hint >= last_end && hint <= region->base) {
-            last_end = hint;
+        if (REGION_INTERSECTS(candidate, length, r->base, r->length)) {
+            candidate = r->base + r->length;
             continue;
         }
 
-        last_end = region->base + region->length;
+        if (candidate + length <= r->base)
+            return candidate;
     }
 
-    if (hint >= last_end && hint <= end && end - hint >= length)
-        return hint;
+    if (candidate + length <= as_end)
+        return candidate;
 
-    if (last_valid == 0 && end - last_end >= length)
-        return last_end;
-
-    return last_valid;
+    return 0;
 }
 
 static VmRegion* region_pool_alloc() {
     if (!list_is_empty(&region_pool))
-        return LIST_ELEMENT_OF(list_pop(&region_pool), VmRegion, list_node);
+        return REGION_OF(list_pop(&region_pool));
 
-    // Grab a page, turn them into new free regions and use the first one to represent the allocation.
-    paddr_t paddr = pmm_alloc(PMM_NONE);
-    uintptr_t vaddr = find_space(&kernel_as, 0, PAGE_SIZE);
-
-    if (vaddr == 0)
-        panic("Out of address space for new free regions.");
-
-    ptm_map(&kernel_as, vaddr, paddr, VM_PROT_RW, VM_CACHING_DEFAULT, VM_PRIV_KERNEL);
-
-    VmRegion* new_regions = (VmRegion*) vaddr;
-    new_regions[0] = (VmRegion) {
-        .as = &kernel_as,
-        .base = vaddr,
-        .length = PAGE_SIZE,
-        .prot = VM_PROT_RW,
-        .caching = VM_CACHING_DEFAULT,
-        .type = VM_REGION_TYPE_ANON
-    };
-
-    region_insert(&kernel_as, &new_regions[0]);
-
-    for (size_t i = 1; i < PAGE_SIZE / sizeof(VmRegion); i++)
+    VmRegion* new_regions = (VmRegion*) HHDM(pmm_alloc(PMM_NONE));
+    for (size_t i = 0; i < PAGE_SIZE / sizeof(VmRegion); i++)
         list_append(&region_pool, &new_regions[i].list_node);
 
     // Finally grab a free page and return it.
-    return LIST_ELEMENT_OF(list_pop(&region_pool), VmRegion, list_node);
+    return REGION_OF(list_pop(&region_pool));
 }
 
 static void region_pool_free(VmRegion* region) {
@@ -142,7 +129,7 @@ static void* map_common(VmAddressSpace* as, void* hint, size_t length, paddr_t p
 
     spinlock_acquire(&as->regions_lock);
 
-    address = find_space(as, address, length);
+    address = find_space(as, address, length, (flags & VM_FLAG_FIXED) != 0);
     if (!address || ((flags & VM_FLAG_FIXED) && address != (uintptr_t)hint)) {
         spinlock_release(&as->regions_lock);
         return nullptr;
