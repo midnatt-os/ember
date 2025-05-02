@@ -11,6 +11,8 @@
 #define NANOPRINTF_IMPLEMENTATION
 #include <nanoprintf.h>
 
+#include "sys/time.h"
+
 #define RESET_COLOR "\033[0m"
 #define INFO_COLOR  "\033[35m"  // Magenta
 #define DEBUG_COLOR "\033[39m"  // Default
@@ -18,6 +20,8 @@
 #define ERROR_COLOR "\033[31m"  // Red
 
 
+
+extern TimeSource* time_source;
 
 static void qemu_dbg_putc(char c) {
     port_outb(0xE9, c);
@@ -39,8 +43,12 @@ void log_list(LogLevel level, const char* tag, const char* fmt, va_list list) {
         case LOG_ERROR: level_name = "ERROR"; color = ERROR_COLOR; break;
     }
 
+    uint64_t now = time_source != nullptr ? time_current() : 0;
+    uint64_t seconds = ns_to_s(now);
+    uint64_t milliseconds = ns_to_ms(now) % 1000;
+
     char buffer[512];
-    int prefix_len = npf_snprintf(buffer, sizeof(buffer), "[%s] %s: ", level_name, tag);
+    int prefix_len = npf_snprintf(buffer, sizeof(buffer), "[%lu:%03lu] [%s] %s: ", seconds, milliseconds, level_name, tag);
     npf_vsnprintf(buffer + prefix_len, sizeof(buffer) - prefix_len, fmt, list);
 
     qemu_dbg_puts(color);

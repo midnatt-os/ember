@@ -10,7 +10,7 @@
 extern TimeSource hpet_time_source;
 extern TimeSource tsc_time_source;
 
-static TimeSource* time_source = nullptr;
+TimeSource* time_source = nullptr;
 
 void time_register_source(TimeSource* source) {
     logln(LOG_INFO, "TIME", "Registering time source %s", source->name);
