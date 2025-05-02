@@ -8,6 +8,7 @@ sources += files(
     'common/lock/spinlock.c',
     'cpu/cpu.c',
     'cpu/gdt.c',
+    'cpu/tsc.c',
     'cpu/interrupts.c',
     'lib/string.c',
     'lib/mem.c',

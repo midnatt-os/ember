@@ -2,11 +2,13 @@
 
 #include "common/assert.h"
 #include "common/log.h"
+#include "cpu/tsc.h"
 #include "dev/hpet.h"
 
 
 
 extern TimeSource hpet_time_source;
+extern TimeSource tsc_time_source;
 
 static TimeSource* time_source = nullptr;
 
@@ -23,5 +25,6 @@ uint64_t time_current() {
 void time_init() {
     hpet_init();
     time_register_source(&hpet_time_source);
-    // "init tsc" (using hpet)
+    tsc_init();
+    time_register_source(&tsc_time_source);
 }
