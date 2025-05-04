@@ -39,10 +39,14 @@ typedef struct {
     uintptr_t phys_base;
 } KernelAddress;
 
+typedef struct limine_smp_response Smp;
+typedef struct limine_smp_info SmpInfo;
+
 typedef struct {
     uintptr_t hhdm_offset;
     Memmap memmap;
     Modules modules;
     KernelAddress kernel_addr;
     uintptr_t rsdp_address;
+    Smp* smp;
 } BootInfo;

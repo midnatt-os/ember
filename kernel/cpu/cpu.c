@@ -1,7 +1,8 @@
 #include "cpu/cpu.h"
 
-#include "stdint.h"
 
+Cpu* cpus = nullptr;
+size_t cpu_count = 0;
 
 [[noreturn]] void cpu_halt() {
     while (true) {
