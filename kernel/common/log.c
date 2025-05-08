@@ -11,6 +11,7 @@
 #define NANOPRINTF_IMPLEMENTATION
 #include <nanoprintf.h>
 
+#include "common/lock/spinlock.h"
 #include "sys/time.h"
 
 #define RESET_COLOR "\033[0m"
@@ -22,6 +23,8 @@
 
 
 extern TimeSource* time_source;
+
+Spinlock log_lock = SPINLOCK_NEW;
 
 static void qemu_dbg_putc(char c) {
     port_outb(0xE9, c);
@@ -57,25 +60,31 @@ void log_list(LogLevel level, const char* tag, const char* fmt, va_list list) {
 }
 
 void log(LogLevel level, const char* tag, const char* fmt, ...) {
+    spinlock_acquire(&log_lock);
     va_list args;
     va_start(args, fmt);
     log_list(level, tag, fmt, args);
     va_end(args);
+    spinlock_release(&log_lock);
 }
 
 void logln(LogLevel level, const char* tag, const char* fmt, ...) {
+    spinlock_acquire(&log_lock);
     va_list args;
     va_start(args, fmt);
     log_list(level, tag, fmt, args);
     qemu_dbg_putc('\n');
     va_end(args);
+    spinlock_release(&log_lock);
 }
 
 void log_raw(const char* fmt, ...) {
+    spinlock_acquire(&log_lock);
     va_list list;
     va_start(list, fmt);
     char buffer[512];
     npf_vsnprintf(buffer, sizeof(buffer), fmt, list);
     qemu_dbg_puts(buffer);
     va_end(list);
+    spinlock_release(&log_lock);
 }
