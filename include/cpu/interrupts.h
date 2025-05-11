@@ -13,4 +13,5 @@ typedef void (*InterruptHandler)(InterruptFrame* frame);
 
 void interrupts_set_handler(uint8_t vector, InterruptHandler handler);
 int16_t interrupts_request_vector(InterruptHandler handler);
+void interrupts_load_idt();
 void interrupts_init();

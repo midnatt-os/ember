@@ -10,6 +10,7 @@ sources += files(
     'cpu/gdt.c',
     'cpu/tsc.c',
     'cpu/interrupts.c',
+    'cpu/lapic.c',
     'lib/string.c',
     'lib/mem.c',
     'lib/list.c',

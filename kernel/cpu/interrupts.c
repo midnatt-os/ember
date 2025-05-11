@@ -6,6 +6,7 @@
 #include "cpu/registers.h"
 #include "common/panic.h"
 #include "common/lock/spinlock.h"
+#include "cpu/cpu.h"
 #include "cpu/gdt.h"
 
 #define IDT_SIZE 256
@@ -104,8 +105,7 @@ static void fill_idt() {
         };
     }
 }
-
-static void load_idt() {
+void interrupts_load_idt() {
     IDTR idtr = { .base = (uint64_t) &idt_entries, .limit = sizeof(idt_entries) - 1 };
     asm volatile("lidt %0" : : "m" (idtr));
 }
@@ -145,7 +145,9 @@ void interrupts_init() {
     int_handlers[0xE] = pf_handler;
 
     fill_idt();
-    load_idt();
+    interrupts_load_idt();
+
+    cpu_int_unmask();
 
     logln(LOG_INFO, "INTERRUPTS", "Initialized");
 }

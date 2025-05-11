@@ -21,8 +21,6 @@ typedef struct {
 
 
 
-extern VmAddressSpace kernel_as;
-
 static volatile HpetRegisters* hpet_registers;
 uint64_t period;
 
