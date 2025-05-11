@@ -17,6 +17,10 @@ static inline __seg_gs Cpu* cpu_current() {
     return ((__seg_gs Cpu*) nullptr);
 }
 
+static inline bool cpu_is_bsp() {
+    return cpu_current()->seq_id == 0;
+}
+
 [[noreturn]] void cpu_halt();
 void cpu_relax();
 void cpu_int_mask();

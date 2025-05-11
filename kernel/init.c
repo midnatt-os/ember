@@ -6,6 +6,7 @@
 #include "cpu/cpu.h"
 #include "cpu/gdt.h"
 #include "cpu/interrupts.h"
+#include "cpu/lapic.h"
 #include "cpu/registers.h"
 #include "memory/heap.h"
 #include "memory/pmm.h"
@@ -25,6 +26,8 @@ _Atomic size_t next_cpu_slot = 1;
     npf_snprintf(tag, sizeof(tag), "CPU%u", cpu_info->lapic_id);
     logln(LOG_INFO, tag, "Waking up");
 
+    vm_load_address_space(&kernel_as);
+
     size_t slot = next_cpu_slot++;
     Cpu* cpu = &cpus[slot];
 
@@ -35,6 +38,13 @@ _Atomic size_t next_cpu_slot = 1;
     };
 
     write_msr(MSR_GS_BASE, (uint64_t) cpu);
+
+    gdt_init();
+    interrupts_load_idt();
+    cpu_int_unmask();
+
+    lapic_init();
+    lapic_timer_init();
 
     while (true)
         cpu_halt();
@@ -77,6 +87,9 @@ _Atomic size_t next_cpu_slot = 1;
 
         write_msr(MSR_GS_BASE, (uint64_t) cpu);
     }
+
+    lapic_init();
+    lapic_timer_init();
 
     for (size_t i = 0; i < cpu_count; i++) {
         SmpInfo* cpu_info = boot_info->smp->cpus[i];
