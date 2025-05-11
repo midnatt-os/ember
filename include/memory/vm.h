@@ -69,6 +69,8 @@ typedef struct {
     ListNode list_node;
 } VmRegion;
 
+extern VmAddressSpace kernel_as;
+
 void* vm_map_anon(VmAddressSpace* as, void* hint, size_t length, VmProtection prot, VmCaching caching, uint64_t flags);
 void* vm_map_direct(VmAddressSpace* as, void* hint, size_t length, paddr_t phys_address, VmProtection prot, VmCaching caching, uint64_t flags);
 void vm_unmap(VmAddressSpace* as, void* address, size_t length);

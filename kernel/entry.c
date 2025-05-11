@@ -24,12 +24,20 @@ LIMINE_REQUEST(module_request, LIMINE_MODULE_REQUEST, 3)
 LIMINE_REQUEST(kernel_address_request, LIMINE_KERNEL_ADDRESS_REQUEST, 3)
 LIMINE_REQUEST(rsdp_request, LIMINE_RSDP_REQUEST, 3)
 
+// SMP
+[[gnu::used, gnu::section(".limine_requests")]] static volatile struct limine_smp_request smp_request = {
+    .id = LIMINE_SMP_REQUEST,
+    .revision = 3,
+    .response = nullptr,
+    .flags = 0 // Enable X2APIC if possible.
+};
+
 [[gnu::used, gnu::section(".limine_requests")]]
 LIMINE_REQUESTS_END_MARKER
 
 
 
-[[noreturn]] void kinit(BootInfo* boot_info);
+[[noreturn]] void bsp_init(BootInfo* boot_info);
 
 BootInfo info;
 
@@ -39,6 +47,7 @@ BootInfo info;
     ASSERT(module_request.response != nullptr);
     ASSERT(kernel_address_request.response != nullptr);
     ASSERT(rsdp_request.response != nullptr);
+    ASSERT(smp_request.response != nullptr);
 
     // HHDM
     info.hhdm_offset = hhdm_request.response->offset;
@@ -85,5 +94,7 @@ BootInfo info;
 
     info.rsdp_address = (uintptr_t) rsdp_request.response->address;
 
-    kinit(&info);
+    info.smp = smp_request.response;
+
+    bsp_init(&info);
 }

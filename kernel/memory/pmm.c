@@ -26,7 +26,7 @@ paddr_t pmm_alloc(uint64_t flags) {
     free_list_head = *((paddr_t*) HHDM(pf));
 
     if ((flags & PMM_ZERO) != 0)
-        memclear((void*) pf, PAGE_FRAME_SIZE);
+        memclear((void*) HHDM(pf), PAGE_FRAME_SIZE);
 
     spinlock_release(&pmm_lock);
 

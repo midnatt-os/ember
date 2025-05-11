@@ -18,8 +18,6 @@
 
 
 
-extern VmAddressSpace kernel_as;
-
 static uint64_t priv_to_flags(VmPrivilege priv) {
     switch (priv) {
         case VM_PRIV_USER: return FLAG_USER;

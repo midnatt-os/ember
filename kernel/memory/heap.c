@@ -11,8 +11,6 @@
 
 
 
-extern VmAddressSpace kernel_as;
-
 Spinlock heap_lock = SPINLOCK_NEW;
 
 uint8_t* bump_pool;

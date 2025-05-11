@@ -34,8 +34,9 @@ void uacpi_kernel_log(uacpi_log_level level, const uacpi_char *fmt, ...) {
 
     switch (level) {
         case UACPI_LOG_TRACE:
-        case UACPI_LOG_DEBUG: break;
-        case UACPI_LOG_INFO: log_list(LOG_INFO, "UACPI", fmt, list); break;
+        case UACPI_LOG_DEBUG:
+        case UACPI_LOG_INFO: break;
+        //case UACPI_LOG_INFO: log_list(LOG_INFO, "UACPI", fmt, list); break;
         case UACPI_LOG_WARN: log_list(LOG_WARN, "UACPI", fmt, list); break;
         case UACPI_LOG_ERROR: log_list(LOG_ERROR, "UACPI", fmt, list); break;
     }
