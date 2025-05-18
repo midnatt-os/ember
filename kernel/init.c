@@ -2,6 +2,7 @@
 
 #include "limine.h"
 #include "nanoprintf.h"
+#include "common/assert.h"
 #include "common/log.h"
 #include "cpu/cpu.h"
 #include "cpu/gdt.h"
@@ -14,6 +15,9 @@
 #include "sys/boot.h"
 #include "sys/stack_trace.h"
 #include "dev/acpi.h"
+#include "fs/tmpfs.h"
+#include "fs/vfs.h"
+#include "lib/string.h"
 #include "dev/pci.h"
 #include "sys/time.h"
 
@@ -69,6 +73,31 @@ _Atomic size_t next_cpu_slot = 1;
     acpi_init(boot_info->rsdp_address);
 
     time_init();
+
+
+
+
+    logln(LOG_INFO, "VFS", "Mounting tmpfs at '/' (rootfs)");
+    ASSERT(vfs_mount("/", &tmpfs_ops) == VFS_RES_OK);
+
+    VNode* node;
+    ASSERT(vfs_create_dir("/foo", &node) == VFS_RES_OK);
+    ASSERT(vfs_create_file("/foo/test.txt", &node) == VFS_RES_OK);
+
+    VfsResult res;
+
+    uint64_t data = 69420;
+    size_t written;
+    res = vfs_write("/foo/test.txt", &data, 0, 8, &written);
+    ASSERT(res == VFS_RES_OK);
+
+    uint64_t data2;
+
+    size_t read;
+    res = vfs_read("/foo/test.txt", &data2, 0, 8, &read);
+    ASSERT(res == VFS_RES_OK);
+
+    logln(LOG_WARN, "READ", "%lu", data2);
 
     pci_enumerate();
 

@@ -5,6 +5,7 @@
 #include "common/panic.h"
 #include "common/util.h"
 #include "common/lock/spinlock.h"
+#include "lib/mem.h"
 #include "memory/vm.h"
 
 #define POOL_SIZE ((size_t) 4096 * 16) // 64 KiB
@@ -36,6 +37,18 @@ void* kmalloc(size_t size) {
     spinlock_release(&heap_lock);
 
     return (void*) addr;
+}
+
+void* krealloc(void* ptr, size_t current_size, size_t new_size) {
+    void* new_ptr = kmalloc(new_size);
+    if (ptr == nullptr || new_size == 0)
+        return new_ptr;
+
+    memclear(new_ptr, new_size);
+    memcpy(new_ptr, ptr, current_size > new_size ? current_size : new_size);
+    kfree(ptr);
+
+    return new_ptr;
 }
 
 void kfree([[maybe_unused]] void* ptr) {}
