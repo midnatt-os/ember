@@ -14,6 +14,7 @@
 #include "sys/boot.h"
 #include "sys/stack_trace.h"
 #include "dev/acpi.h"
+#include "dev/pci.h"
 #include "sys/time.h"
 
 
@@ -68,6 +69,8 @@ _Atomic size_t next_cpu_slot = 1;
     acpi_init(boot_info->rsdp_address);
 
     time_init();
+
+    pci_enumerate();
 
     cpu_count = boot_info->smp->cpu_count;
     cpus = kmalloc(sizeof(Cpu) * cpu_count);
