@@ -13,7 +13,11 @@ rm -rf limine
 cp support/limine.conf build/iso_root/  # copy limine.conf
 cp $1 build/iso_root/  # copy kernel elf
 
+support/create_initrd.py
+cp build/aloe.initrd build/iso_root
+
 sym_gen $1 build/iso_root/aloe_symbols.symf
+
 mkimg --config=support/mkimg_aloe.toml
 
 rm -rf build/iso_root
