@@ -3,6 +3,7 @@
 #include <stdint.h>
 
 #include "common/assert.h"
+#include "common/log.h"
 #include "lib/string.h"
 #include "memory/heap.h"
 
@@ -13,6 +14,10 @@ static List vfs_list = LIST_NEW;
 static bool split_path(char* path, char** parent, char** base) {
     size_t len = strlen(path);
     int sep_idx = -1;
+
+    // Strip trailing '/' unless path is "/"
+    while (len > 1 && path[len - 1] == '/')
+        path[--len] = '\0';
 
     for (int i = len - 1; i >= 0; i--) {
         if (path[i] == '/') {
@@ -180,6 +185,15 @@ VfsResult vfs_read(char* path, void* buf, size_t off, size_t len, size_t* read) 
         return lookup_res;
 
     return node->ops->read(node, buf, off, len, read);
+}
+
+VfsResult vfs_get_attr(char* path, VNodeAttributes* attr) {
+    VNode* node;
+    VfsResult lookup_res = vfs_lookup(path, &node);
+    if (lookup_res != VFS_RES_OK)
+        return lookup_res;
+
+    return node->ops->get_attr(node, attr);
 }
 
 VfsResult vfs_mount(char* path, VfsOps* ops) {

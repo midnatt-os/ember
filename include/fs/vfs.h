@@ -38,6 +38,10 @@ struct VNode {
 };
 
 typedef struct {
+    size_t size;
+} VNodeAttributes;
+
+typedef struct {
     char* name;
     VNodeType type;
 } DirEntry;
@@ -49,6 +53,7 @@ struct VNodeOps {
     VfsResult (*create_dir)(VNode* parent, char* name, VNode** new_node);
     VfsResult (*write)(VNode* node, void* buf, size_t off, size_t len, size_t* written);
     VfsResult (*read)(VNode* node, void* buf, size_t off, size_t len, size_t* read);
+    VfsResult (*get_attr)(VNode* node, VNodeAttributes* attr);
 };
 
 VfsResult vfs_lookup(char* path, VNode** found_node);
@@ -57,5 +62,6 @@ VfsResult vfs_create_file(char* path, VNode** new_node);
 VfsResult vfs_create_dir(char* path, VNode** new_node);
 VfsResult vfs_write(char* path, void* buf, size_t off, size_t len, size_t* written);
 VfsResult vfs_read(char* path, void* buf, size_t off, size_t len, size_t* read);
+VfsResult vfs_get_attr(char* path, VNodeAttributes* attr);
 
 VfsResult vfs_mount(char* path, VfsOps* ops);

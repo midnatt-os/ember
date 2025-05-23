@@ -189,6 +189,16 @@ VfsResult tmpfs_read(VNode* node, void* buf, size_t off, size_t len, size_t* rea
     return VFS_RES_OK;
 }
 
+VfsResult tmpfs_get_attr(VNode* node, VNodeAttributes* attr) {
+    TmpfsNode* n = TMPFS_NODE(node);
+
+    *attr = (VNodeAttributes) {
+        .size = n->file.length,
+    };
+
+    return VFS_RES_OK;
+}
+
 static VNodeOps tmpfs_node_ops = {
     .lookup      = tmpfs_node_lookup,
     .read_dir    = tmpfs_read_dir,
@@ -196,6 +206,7 @@ static VNodeOps tmpfs_node_ops = {
     .create_dir  = tmpfs_create_dir,
     .write       = tmpfs_write,
     .read        = tmpfs_read,
+    .get_attr = tmpfs_get_attr,
 };
 
 VfsOps tmpfs_ops = { .mount = tmpfs_mount, .root = tmpfs_root };

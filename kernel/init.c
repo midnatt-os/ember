@@ -4,6 +4,7 @@
 #include "nanoprintf.h"
 #include "common/assert.h"
 #include "common/log.h"
+#include "common/tar.h"
 #include "cpu/cpu.h"
 #include "cpu/gdt.h"
 #include "cpu/interrupts.h"
@@ -74,32 +75,33 @@ _Atomic size_t next_cpu_slot = 1;
 
     time_init();
 
+    pci_enumerate();
 
 
 
     logln(LOG_INFO, "VFS", "Mounting tmpfs at '/' (rootfs)");
     ASSERT(vfs_mount("/", &tmpfs_ops) == VFS_RES_OK);
 
-    VNode* node;
-    ASSERT(vfs_create_dir("/foo", &node) == VFS_RES_OK);
-    ASSERT(vfs_create_file("/foo/test.txt", &node) == VFS_RES_OK);
 
-    VfsResult res;
 
-    uint64_t data = 69420;
-    size_t written;
-    res = vfs_write("/foo/test.txt", &data, 0, 8, &written);
+    //TODO: find_module("initrd")
+    //TODO: find_module("aloe_symbols")
+    populate_tmpfs_from_initrd(&boot_info->modules.modules[1]);
+
+
+
+    VNodeAttributes attr;
+    ASSERT(vfs_get_attr("/init.elf", &attr) == VFS_RES_OK);
+
+    char file_contents[512];
+    size_t read_bytes;
+    VfsResult res = vfs_read("/init.elf", file_contents, 0, 4, &read_bytes);
     ASSERT(res == VFS_RES_OK);
 
-    uint64_t data2;
+    logln(LOG_WARN, "READ", "%s", file_contents);
 
-    size_t read;
-    res = vfs_read("/foo/test.txt", &data2, 0, 8, &read);
-    ASSERT(res == VFS_RES_OK);
 
-    logln(LOG_WARN, "READ", "%lu", data2);
 
-    pci_enumerate();
 
     cpu_count = boot_info->smp->cpu_count;
     cpus = kmalloc(sizeof(Cpu) * cpu_count);
