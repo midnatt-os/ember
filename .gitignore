@@ -1,10 +1,6 @@
-.idea/
-
-buildDir/
-/subprojects/*
-!/subprojects/*.wrap
-
-iso_root/
-
+.chariot-cache
+.ropeproject
+.zed
 log.txt
-aloe.img
+
+.luarc.json
