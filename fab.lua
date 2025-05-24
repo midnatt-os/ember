@@ -1,6 +1,6 @@
 local kernel_sources = sources(fab.glob("kernel/**/*.{c,asm}"))
 
-local include_dirs = { builtins.c.include_dir("include") }
+local include_dirs = { builtins.c.include_dir("kernel") }
 
 local c_flags = {
     "-std=gnu23",
