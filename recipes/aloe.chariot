@@ -1,0 +1,57 @@
+source/limine {
+    url: "https://github.com/limine-bootloader/limine.git"
+    type: "git"
+    revision: "v9.x-binary"
+}
+
+source/aloe {
+    url: "."
+    type: "local"
+}
+
+package/aloe {
+    dependencies: [
+        source/aloe
+
+        tool/fabricate
+
+        image/nasm
+        image/clang
+        image/lld
+        image/llvm
+        image/ninja-build
+    ]
+    configure: <sh>
+        fabricate configure \
+            --builddir=$BUILD_DIR \
+            --config=$SOURCES_DIR/aloe/fab.lua \
+            --prefix=$PREFIX
+    </sh>
+    build: <sh>fabricate build --builddir=$BUILD_DIR</sh> // TODO: ninja -j?
+    install: <sh>fabricate install --builddir=$BUILD_DIR --destdir=$INSTALL_DIR</sh>
+}
+
+custom/image {
+    dependencies: [
+        source/limine
+        source/aloe
+
+        tool/mkimg
+        tool/symfgen
+
+        package/aloe
+    ]
+    configure: <sh>rm -rf $BUILD_DIR/*</sh>
+    build: <sh>
+        mkdir -p root/EFI/BOOT
+
+        install $SOURCES_DIR/limine/BOOTX64.EFI root/EFI/BOOT/
+        install $SOURCES_DIR/aloe/support/limine.conf root/
+        install $SYSROOT_DIR/usr/bin/aloe.elf root/
+
+        sym_gen $SYSROOT_DIR/usr/bin/aloe.elf root/aloe_symbols.symf
+
+        mkimg --config=$SOURCES_DIR/aloe/support/mkimg_aloe.toml
+    </sh>
+    install: <sh>install aloe.img $INSTALL_DIR</sh>
+}

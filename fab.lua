@@ -1,7 +1,4 @@
-
-
-local kernel_c_sources = sources(fab.glob("kernel/**/*.c"))
-local kernel_asm_sources = sources(fab.glob("kernel/**/*.asm"))
+local kernel_sources = sources(fab.glob("kernel/**/*.{c,asm}"))
 
 local include_dirs = { builtins.c.include_dir("include") }
 
@@ -85,8 +82,8 @@ local uacpi = fab.dependency(
     "2.1.1"
 )
 
-table.extend(kernel_c_sources, sources(path(cc_runtime.path, "cc-runtime.c")))
-table.extend(kernel_c_sources, sources(uacpi:glob("source/*.c")))
+table.extend(kernel_sources, sources(path(cc_runtime.path, "cc-runtime.c")))
+table.extend(kernel_sources, sources(uacpi:glob("source/*.c")))
 
 table.extend(include_dirs, {
     builtins.c.include_dir(path(freestnd_c_hdrs.path, "x86_64/include")),
@@ -95,17 +92,17 @@ table.extend(include_dirs, {
     builtins.c.include_dir(path(uacpi.path, "include")),
 })
 
-local objs = {}
+local objs = builtins.generate(
+    kernel_sources,
+    {
+        c = function(sources)
+            return cc:generate(sources, c_flags, include_dirs)
+        end,
+        asm = function(sources)
+            return nasm:generate(sources, { "-f elf64", "-Werror" })
+        end
+    }
+)
 
-table.extend(objs,cc:compile_objects(
-    kernel_c_sources,
-    include_dirs,
-    c_flags
-))
-
-table.extend(objs, nasm:assemble(
-    kernel_asm_sources,
-    { "-f elf64", "-Werror" }
-))
-
-linker:link("aloe.elf", objs, linker_flags)
+local kernel = linker:link("aloe.elf", objs, linker_flags)
+kernel:install("bin/aloe.elf")
