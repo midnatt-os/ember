@@ -31,6 +31,29 @@ package/aloe {
     install: <sh>fabricate install --builddir=$BUILD_DIR --destdir=$INSTALL_DIR</sh>
 }
 
+package/init {
+    dependencies: [ source/aloe, image/clang, image/make ]
+    build: <sh>make -C $SOURCES_DIR/aloe/init TARGET=$BUILD_DIR/init</sh>
+    install: <sh>install -D init $INSTALL_DIR$PREFIX/bin/init.elf</sh>
+}
+
+custom/initrd {
+    dependencies: [ package/init ]
+    configure: <sh>rm -rf $BUILD_DIR/*</sh>
+    build: <py>
+import os
+import shutil
+import tarfile
+
+shutil.copytree(f"{os.environ["SYSROOT_DIR"]}", "initrd/")
+
+with tarfile.open("aloe.initrd", "w", format=tarfile.USTAR_FORMAT) as tar:
+    for entry in os.listdir("initrd"):
+        tar.add("initrd/" + entry, arcname=entry)
+    </py>
+    install: <sh>install -D aloe.initrd $INSTALL_DIR</sh>
+}
+
 custom/image {
     dependencies: [
         source/limine
@@ -40,16 +63,19 @@ custom/image {
         tool/symfgen
 
         package/aloe
+
+        custom/initrd
     ]
     configure: <sh>rm -rf $BUILD_DIR/*</sh>
     build: <sh>
-        mkdir -p root/EFI/BOOT
+        mkdir -p efi_root/EFI/BOOT
 
-        install $SOURCES_DIR/limine/BOOTX64.EFI root/EFI/BOOT/
-        install $SOURCES_DIR/aloe/support/limine.conf root/
-        install $SYSROOT_DIR/usr/bin/aloe.elf root/
+        install $SOURCES_DIR/limine/BOOTX64.EFI efi_root/EFI/BOOT/
+        install $SOURCES_DIR/aloe/support/limine.conf efi_root/
+        install $SYSROOT_DIR/usr/bin/aloe.elf efi_root/
 
-        sym_gen $SYSROOT_DIR/usr/bin/aloe.elf root/aloe_symbols.symf
+        install $CUSTOM_DIR/initrd/aloe.initrd efi_root/
+        sym_gen $SYSROOT_DIR/usr/bin/aloe.elf efi_root/aloe_symbols.symf
 
         mkimg --config=$SOURCES_DIR/aloe/support/mkimg_aloe.toml
     </sh>

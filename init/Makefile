@@ -9,9 +9,7 @@ SRC := init.c
 all: $(TARGET)
 
 $(TARGET): $(SRC)
-	@echo "→ Compiling $< with $(CC)"
 	$(CC) $(CFLAGS) -o $@ $<
 
 clean:
-	@echo "→ Removing $(TARGET)"
 	@rm -f $(TARGET)
