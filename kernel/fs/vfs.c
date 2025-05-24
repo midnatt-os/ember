@@ -6,10 +6,11 @@
 #include "common/log.h"
 #include "lib/string.h"
 #include "memory/heap.h"
-
+#include "common/lock/spinlock.h"
 
 
 static List vfs_list = LIST_NEW;
+static Spinlock vfs_list_lock = SPINLOCK_NEW;
 
 static bool split_path(char* path, char** parent, char** base) {
     size_t len = strlen(path);
@@ -52,6 +53,8 @@ VfsResult vfs_lookup(char* path, VNode** found_node) {
     Vfs* found_fs = nullptr;
     size_t longest_match = 0;
 
+    spinlock_acquire(&vfs_list_lock);
+
     LIST_FOREACH(vfs_list, node) {
         Vfs* fs = LIST_ELEMENT_OF(node, Vfs, list_node);
         char* mp = fs->mount_point;
@@ -73,6 +76,8 @@ VfsResult vfs_lookup(char* path, VNode** found_node) {
             }
         }
     }
+
+    spinlock_release(&vfs_list_lock);
 
     if (found_fs == nullptr)
         return VFS_RES_NOT_FOUND;
@@ -199,15 +204,23 @@ VfsResult vfs_get_attr(char* path, VNodeAttributes* attr) {
 VfsResult vfs_mount(char* path, VfsOps* ops) {
     bool is_root = streq(path, "/");
 
+    spinlock_acquire(&vfs_list_lock);
+
     if (!(is_root && list_is_empty(&vfs_list))) {
         VNode* mount_node = nullptr;
         VfsResult res = vfs_lookup(path, &mount_node);
-        if (res != VFS_RES_OK)
+        if (res != VFS_RES_OK) {
+            spinlock_release(&vfs_list_lock);
             return res;
+        }
 
-        if (mount_node->type != VNODE_DIR)
+        if (mount_node->type != VNODE_DIR) {
+            spinlock_release(&vfs_list_lock);
             return VFS_RES_NOT_DIR;
+        }
     }
+
+    spinlock_release(&vfs_list_lock);
 
     Vfs* vfs = kmalloc(sizeof(Vfs));
     char* mount_point = kmalloc(strlen(path) + 1);

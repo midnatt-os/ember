@@ -1,5 +1,6 @@
 #include <stdatomic.h>
 
+#include "common/modules.h"
 #include "limine.h"
 #include "nanoprintf.h"
 #include "common/assert.h"
@@ -77,31 +78,13 @@ _Atomic size_t next_cpu_slot = 1;
 
     pci_enumerate();
 
-
-
+    // Mount tmpfs at root
     logln(LOG_INFO, "VFS", "Mounting tmpfs at '/' (rootfs)");
     ASSERT(vfs_mount("/", &tmpfs_ops) == VFS_RES_OK);
 
-
-
-    //TODO: find_module("initrd")
-    //TODO: find_module("aloe_symbols")
-    populate_tmpfs_from_initrd(&boot_info->modules.modules[1]);
-
-
-
-    VNodeAttributes attr;
-    ASSERT(vfs_get_attr("/init.elf", &attr) == VFS_RES_OK);
-
-    char file_contents[512];
-    size_t read_bytes;
-    VfsResult res = vfs_read("/init.elf", file_contents, 0, 4, &read_bytes);
-    ASSERT(res == VFS_RES_OK);
-
-    logln(LOG_WARN, "READ", "%s", file_contents);
-
-
-
+    // Load initrd into tmpfs
+    Module* initrd_module = find_module(&boot_info->modules, "initrd");
+    populate_tmpfs_from_initrd(initrd_module);
 
     cpu_count = boot_info->smp->cpu_count;
     cpus = kmalloc(sizeof(Cpu) * cpu_count);

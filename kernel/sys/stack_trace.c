@@ -2,6 +2,7 @@
 
 #include "common/assert.h"
 #include "common/log.h"
+#include "common/modules.h"
 #include "lib/string.h"
 
 #define SYMF_MAGIC 0x464D5953
@@ -22,16 +23,9 @@ typedef struct [[gnu::packed]] {
 Header* header;
 
 void load_kernel_symbols(Modules* modules) {
-    for (size_t i = 0; i < modules->module_count; i++) {
-        if (!streq(modules->modules[i].cmdline, "aloe_symbols"))
-            continue;
-
-        header = (Header*) modules->modules[i].address;
-        ASSERT(header->magic == SYMF_MAGIC);
-        return;
-    }
-
-    header = nullptr;
+    Module* sym_module = find_module(modules, "aloe_symbols");
+    ASSERT(sym_module != nullptr && ((Header*) sym_module->address)->magic == SYMF_MAGIC);
+    header = (Header*) sym_module->address;
 }
 
 static bool find_symbol(uintptr_t rip, Entry *out_sym) {

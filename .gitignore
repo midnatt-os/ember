@@ -5,3 +5,4 @@ log.txt
 
 .luarc.json
 .gdbinit
+.clang-tidy
