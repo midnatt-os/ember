@@ -92,3 +92,7 @@ ListNode* list_pop(List* list) {
     list_delete(list, node);
     return node;
 }
+
+ListNode* list_peek(List* list) {
+    return list->head;
+}

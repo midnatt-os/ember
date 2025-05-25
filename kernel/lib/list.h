@@ -30,3 +30,4 @@ void list_append(List* list, ListNode* node);
 void list_prepend(List* list, ListNode* node);
 void list_delete(List* list, ListNode* node);
 ListNode* list_pop(List* list);
+ListNode* list_peek(List* list);
