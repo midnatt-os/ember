@@ -1,6 +1,7 @@
 #include <stdatomic.h>
 
 #include "common/modules.h"
+#include "events/event.h"
 #include "limine.h"
 #include "nanoprintf.h"
 #include "common/assert.h"
@@ -19,7 +20,6 @@
 #include "dev/acpi.h"
 #include "fs/tmpfs.h"
 #include "fs/vfs.h"
-#include "lib/string.h"
 #include "dev/pci.h"
 #include "sys/time.h"
 
@@ -27,6 +27,10 @@
 uintptr_t g_hhdm_offset;
 
 _Atomic size_t next_cpu_slot = 1;
+
+void test([[maybe_unused]] void* arg) {
+    logln(LOG_WARN, "", "test from CPU %d", cpu_current()->seq_id);
+}
 
 [[noreturn]] void ap_init(SmpInfo* cpu_info) {
     char tag[5];
@@ -39,6 +43,7 @@ _Atomic size_t next_cpu_slot = 1;
     Cpu* cpu = &cpus[slot];
 
     *cpu = (Cpu) {
+        .self = cpu,
         .seq_id = slot,
         .lapic_id = cpu_info->lapic_id,
         .lapic_timer_freq = 0
@@ -52,6 +57,8 @@ _Atomic size_t next_cpu_slot = 1;
 
     lapic_init();
     lapic_timer_init();
+
+    event_init();
 
     while (true)
         cpu_halt();
@@ -97,6 +104,7 @@ _Atomic size_t next_cpu_slot = 1;
         Cpu* cpu = &cpus[0];
 
         *cpu = (Cpu) {
+            .self = cpu,
             .seq_id = 0,
             .lapic_id = cpu_info->lapic_id,
             .lapic_timer_freq = 0
@@ -115,6 +123,8 @@ _Atomic size_t next_cpu_slot = 1;
 
         atomic_store_explicit(&cpu_info->goto_address, ap_init, memory_order_release);
     }
+
+    event_init();
 
     while (true)
         cpu_halt();
