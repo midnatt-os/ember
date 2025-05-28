@@ -38,11 +38,13 @@ extern uint64_t isr_stubs[IDT_SIZE];
 
 void common_int_handler(InterruptFrame* frame) {
     spinlock_acquire(&int_handlers_lock);
-    if (int_handlers[frame->int_number] == nullptr)
+    InterruptHandler handler = int_handlers[frame->int_number];
+    spinlock_release(&int_handlers_lock);
+    if (handler == nullptr)
         panic("no interrupt handler for int_number: %u", frame->int_number); // TODO: Handle properly
 
-    int_handlers[frame->int_number](frame);
-    spinlock_release(&int_handlers_lock);
+    handler(frame);
+    log_raw("finished handler\n");
 }
 
 static void gp_handler(InterruptFrame* frame) {

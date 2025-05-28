@@ -54,13 +54,11 @@ void event_cancel(Event *event) {
 void event_handle_next([[maybe_unused]] InterruptFrame* ctx) {
     lapic_eoi();
 
-    logln(LOG_DEBUG, "EVENTS", "CPU %d event queue hhas %d events", cpu_current()->seq_id, (cpu_current()->events.count));
-
     ListNode* head;
-    uint64_t now = time_current();
     while ((head = list_peek(&cpu_current()->events)) != nullptr) {
         Event* e = LIST_ELEMENT_OF(head, Event, list_node);
 
+        uint64_t now = time_current();
         if (e->deadline > now) break;
 
         list_delete(&cpu_current()->events, head);

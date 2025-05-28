@@ -15,6 +15,7 @@
 #include "memory/heap.h"
 #include "memory/pmm.h"
 #include "memory/vm.h"
+#include "sched/sched.h"
 #include "sys/boot.h"
 #include "sys/stack_trace.h"
 #include "dev/acpi.h"
@@ -22,15 +23,12 @@
 #include "fs/vfs.h"
 #include "dev/pci.h"
 #include "sys/time.h"
+#include "lib/mem.h"
 
 
 uintptr_t g_hhdm_offset;
 
 _Atomic size_t next_cpu_slot = 1;
-
-void test([[maybe_unused]] void* arg) {
-    logln(LOG_WARN, "", "test from CPU %d", cpu_current()->seq_id);
-}
 
 [[noreturn]] void ap_init(SmpInfo* cpu_info) {
     char tag[5];
@@ -59,6 +57,15 @@ void test([[maybe_unused]] void* arg) {
     lapic_timer_init();
 
     event_init();
+
+    Tss* tss = kmalloc(sizeof(Tss));
+    memclear(tss, sizeof(Tss));
+    gdt_load_tss(tss);
+
+    cpu_current()->tss = tss;
+
+    sched_init();
+    sched_start();
 
     while (true)
         cpu_halt();
@@ -125,6 +132,14 @@ void test([[maybe_unused]] void* arg) {
     }
 
     event_init();
+
+    Tss* bsp_tss = kmalloc(sizeof(Tss));
+    memclear(bsp_tss, sizeof(Tss));
+    gdt_load_tss(bsp_tss);
+    cpu_current()->tss = bsp_tss;
+
+    sched_init();
+    sched_start();
 
     while (true)
         cpu_halt();

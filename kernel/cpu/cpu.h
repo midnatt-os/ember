@@ -1,6 +1,8 @@
 #pragma once
 
 #include "lib/list.h"
+#include "sched/sched.h"
+#include "cpu/tss.h"
 
 #include <stdint.h>
 #include <stddef.h>
@@ -12,6 +14,9 @@ typedef struct Cpu {
     uint32_t lapic_id;
     uint64_t lapic_timer_freq;
 
+    Tss* tss;
+
+    Scheduler* scheduler;
     List events;
 } Cpu;
 
@@ -29,6 +34,7 @@ static inline bool cpu_is_bsp() {
 
 [[noreturn]] void cpu_halt();
 void cpu_relax();
-void cpu_int_mask();
-void cpu_int_unmask();
 bool cpu_int_get_state();
+bool cpu_int_mask();
+void cpu_int_unmask();
+void cpu_int_restore(bool state);

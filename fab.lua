@@ -16,6 +16,8 @@ local c_flags = {
     "-fno-stack-check",
     "-fno-strict-aliasing",
 
+    "-fsanitize=undefined",
+
     "-O0",
     "-g",
     "-fno-lto",
@@ -99,7 +101,7 @@ local objs = builtins.generate(
             return cc:generate(sources, c_flags, include_dirs)
         end,
         asm = function(sources)
-            return nasm:generate(sources, { "-f elf64", "-Werror" })
+            return nasm:generate(sources, { "-g", "-f elf64", "-Werror" })
         end
     }
 )

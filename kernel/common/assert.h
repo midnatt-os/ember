@@ -2,9 +2,6 @@
 
 #include "common/panic.h"
 
-// TODO: change to one line (and remove the do-while)
-#define ASSERT(cond) \
-    do { \
-        if (!(cond)) \
-            panic("Assertion: %s failed at %s:%d\n", #cond, __FILE__, __LINE__); \
-    } while (0)
+#define ASSERT(cond) ({ if (!(cond)) panic("Assertion: %s failed at %s:%d\n", #cond, __FILE__, __LINE__); })
+
+#define ASSERT_UNREACHABLE() ({ panic("Unreachable %s:%d\n", __FILE__, __LINE__); __builtin_unreachable(); })

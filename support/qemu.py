@@ -18,7 +18,7 @@ qemu_args = [
     "-accel", "tcg",
     "-machine", "q35",
     "-cpu", "qemu64",
-    "-smp", "cores=4",
+    "-smp", "cores=1",
     "-m", "1G",
     "-M", "smm=off",
     "-d", "int",

@@ -11,8 +11,7 @@ void spinlock_acquire(Spinlock* slock) {
     while (true) {
         if (!__atomic_test_and_set(&slock->locked, __ATOMIC_ACQUIRE))
         {
-            slock->prev_interrupt_state = cpu_int_get_state();
-            cpu_int_mask();
+            slock->prev_interrupt_state = cpu_int_mask();
             return;
         }
 
@@ -30,8 +29,7 @@ void spinlock_release(Spinlock* slock) {
 
     __atomic_clear(&slock->locked, __ATOMIC_RELEASE);
 
-    if (prev_int_state)
-        cpu_int_unmask();
+    cpu_int_restore(prev_int_state);
 }
 
 void spinlock_primitive_acquire(Spinlock* slock) {
