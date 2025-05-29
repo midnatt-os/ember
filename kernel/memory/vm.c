@@ -4,9 +4,11 @@
 #include "common/log.h"
 #include "cpu/registers.h"
 #include "lib/math.h"
+#include "lib/mem.h"
 #include "memory/hhdm.h"
 #include "memory/pmm.h"
 #include "memory/ptm.h"
+#include "memory/heap.h"
 
 #define MIN(A, B) (A < B ? A : B)
 #define REGION_INTERSECTS(BASE1, LENGTH1, BASE2, LENGTH2) ((BASE1) < ((BASE2) + (LENGTH2)) && (BASE2) < ((BASE1) + (LENGTH1)))
@@ -260,6 +262,21 @@ void vm_unmap(VmAddressSpace* as, void* address, size_t length) {
 
 void vm_load_address_space(VmAddressSpace* as) {
     write_cr3(as->cr3);
+}
+
+VmAddressSpace* vm_create_address_space() {
+    VmAddressSpace* as = kmalloc(sizeof(VmAddressSpace));
+
+    *as = (VmAddressSpace) {
+        .cr3_lock = SPINLOCK_NEW,
+        .regions_lock = SPINLOCK_NEW,
+        .cr3 = pmm_alloc(PMM_ZERO),
+        .regions = LIST_NEW
+    };
+
+    memcpy((void *) HHDM(as->cr3 + 256 * sizeof(uint64_t)), (void *) HHDM(kernel_as.cr3 + 256 * sizeof(uint64_t)), 256 * sizeof(uint64_t));
+
+    return as;
 }
 
 void vm_init(KernelAddress kernel_addr, Memmap memmap) {

@@ -1,7 +1,9 @@
 #include <stdatomic.h>
+#include <stdint.h>
 
 #include "common/modules.h"
 #include "events/event.h"
+#include "lib/list.h"
 #include "limine.h"
 #include "nanoprintf.h"
 #include "common/assert.h"
@@ -15,7 +17,9 @@
 #include "memory/heap.h"
 #include "memory/pmm.h"
 #include "memory/vm.h"
+#include "sched/process.h"
 #include "sched/sched.h"
+#include "sched/thread.h"
 #include "sys/boot.h"
 #include "sys/stack_trace.h"
 #include "dev/acpi.h"
@@ -139,6 +143,14 @@ _Atomic size_t next_cpu_slot = 1;
     cpu_current()->tss = bsp_tss;
 
     sched_init();
+
+    VmAddressSpace* init_proc_as = vm_create_address_space();
+
+    Process* init_proc = process_create("init", init_proc_as);
+
+    Thread* init_thread = thread_create_user(init_proc, "init_main", 0x69420);
+    list_append(&cpu_current()->scheduler->ready_queue, &init_thread->sched_list_node);
+
     sched_start();
 
     while (true)

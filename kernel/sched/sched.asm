@@ -30,3 +30,9 @@ sched_context_switch:
 
     mov rax, rdi
     ret
+
+
+
+global thread_init_user
+thread_init_user:
+    iretq

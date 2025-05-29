@@ -13,12 +13,6 @@ typedef struct {
     uintptr_t size;
 } ThreadStack;
 
-typedef struct [[gnu::packed]] {
-    uint64_t r12, r13, r14, r15, rbp, rbx;
-    void (*thread_init)(Thread* prev);
-    void (*entry)();
-} KernelInitStack;
-
 typedef enum {
     STATUS_READY,
     STATUS_RUNNING,
@@ -42,3 +36,4 @@ typedef struct Thread {
 extern _Atomic uint64_t next_tid;
 
 Thread* thread_kernel_create(void (*entry)(), const char* name);
+Thread* thread_create_user(Process* proc, const char* name, uintptr_t entry_rip);

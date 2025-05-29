@@ -7,7 +7,10 @@
 
 typedef struct {
     uint64_t pid;
+    char name[32];
     VmAddressSpace* as;
 
     List threads;
 } Process;
+
+Process* process_create(const char* name, VmAddressSpace* as);

@@ -12,6 +12,7 @@
 #include "sys/time.h"
 #include "memory/heap.h"
 #include "lib/mem.h"
+#include "lib/string.h"
 #include "nanoprintf.h"
 
 #include <stdint.h>
@@ -23,10 +24,10 @@
 
 
 void sched_yield(ThreadStatus target_status);
-/*static void preempt(void* target_status) {
+static void preempt(void* target_status) {
     sched_yield((ThreadStatus) (uintptr_t) target_status);
-}*/
-int16_t vec = 0;
+}
+
 void maybe_reschedule_thread(Thread* t) {
     ASSERT(!cpu_int_get_state());
 
@@ -39,24 +40,17 @@ void maybe_reschedule_thread(Thread* t) {
         }
     }
 
-    lapic_timer_oneshot(THREAD_QUANTUM, vec);
-
-    /*
      SCHED->preemption_event = (Event) {
         .deadline = time_current() + THREAD_QUANTUM,
         .callback = preempt,
         .callback_arg = (void*) STATUS_READY
      };
 
-     event_add(&SCHED->preemption_event);*/
+     event_add(&SCHED->preemption_event);
 }
 
 Thread* sched_context_switch(Thread* this, Thread* next);
 static void sched_switch(Thread* this, Thread* next) {
-    ASSERT(!cpu_int_get_state());
-
-    logln(LOG_DEBUG, "SCHED", "ctx switch (from: %s, to: %s)", this->name, next->name);
-
     if (next->proc != nullptr)
         vm_load_address_space(next->proc->as);
     else
@@ -106,10 +100,10 @@ void sched_yield(ThreadStatus target_status) {
 }
 
 
-
+/*
 [[noreturn]] static void one() {
     while (true) {
-        log_raw("one\n");
+        log_raw("(cpu%d) one\n", cpu_current()->seq_id);
         cpu_relax();
 
         uint64_t n = time_current() + s_to_ns(1);
@@ -119,13 +113,13 @@ void sched_yield(ThreadStatus target_status) {
 
 [[noreturn]] static void two() {
     while (true) {
-        log_raw("two\n");
+        log_raw("(cpu%d) two\n", cpu_current()->seq_id);
         cpu_relax();
 
         uint64_t n = time_current() + s_to_ns(1);
         while (time_current() < n);
     }
-}
+}*/
 
 [[noreturn]] static void sched_idle() {
     while (true) {
@@ -133,7 +127,6 @@ void sched_yield(ThreadStatus target_status) {
         uint64_t n = time_current() + s_to_ns(1);
         while (time_current() < n);
         cpu_relax();
-        sched_yield(STATUS_READY);
     }
 }
 
@@ -150,11 +143,6 @@ void sched_init() {
     sched->ready_queue = LIST_NEW;
 }
 
-void test([[maybe_unused]]InterruptFrame* ctx) {
-    lapic_eoi();
-    sched_yield(STATUS_READY);
-}
-
 void sched_start() {
     logln(LOG_INFO, "SCHED", "Starting scheduler");
 
@@ -169,13 +157,11 @@ void sched_start() {
 
     cpu_current()->scheduler->current_thread = bsp_thread;
 
-    Thread* t_one = thread_kernel_create(one, "one");
+    /*Thread* t_one = thread_kernel_create(one, "one");
     Thread* t_two = thread_kernel_create(two, "two");
 
     list_append(&SCHED->ready_queue, &t_one->sched_list_node);
-    list_append(&SCHED->ready_queue, &t_two->sched_list_node);
-
-    vec = interrupts_request_vector(test);
+    list_append(&SCHED->ready_queue, &t_two->sched_list_node);*/
 
     sched_yield(STATUS_DONE);
     ASSERT_UNREACHABLE();

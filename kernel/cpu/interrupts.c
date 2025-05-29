@@ -4,6 +4,7 @@
 
 #include "common/log.h"
 #include "cpu/registers.h"
+#include "common/assert.h"
 #include "common/panic.h"
 #include "common/lock/spinlock.h"
 #include "cpu/cpu.h"
@@ -44,7 +45,6 @@ void common_int_handler(InterruptFrame* frame) {
         panic("no interrupt handler for int_number: %u", frame->int_number); // TODO: Handle properly
 
     handler(frame);
-    log_raw("finished handler\n");
 }
 
 static void gp_handler(InterruptFrame* frame) {
@@ -73,7 +73,7 @@ static void pf_handler(InterruptFrame* frame) {
 
     panic(
         "PAGE FAULT\n"
-        "   Faulting address (CR2) : %p\n"
+        "   Faulting address (CR2) : %#p\n"
         "   Present violation?     : %d\n"
         "   Write access?          : %d\n"
         "   User-mode access?      : %d\n"

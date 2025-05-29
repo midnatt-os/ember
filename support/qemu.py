@@ -23,6 +23,7 @@ qemu_args = [
     "-M", "smm=off",
     "-d", "int",
     "-D", "log.txt",
+    "-monitor", "stdio",
     "-debugcon", "file:/dev/stdout",
     "-S",
     "-s",
