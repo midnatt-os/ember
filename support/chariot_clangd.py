@@ -7,7 +7,7 @@ import subprocess
 
 
 
-CHARIOT_CACHE_PATH = "/home/vincent/projects/aloe-chariot-cache"
+CHARIOT_CACHE_PATH = "/home/vincent/projects/ember-cache"
 
 project_path = dirname(dirname(abspath(__file__)))
 recipe_source_path = os.getcwd()

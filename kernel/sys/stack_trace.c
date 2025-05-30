@@ -23,7 +23,7 @@ typedef struct [[gnu::packed]] {
 Header* header;
 
 void load_kernel_symbols(Modules* modules) {
-    Module* sym_module = find_module(modules, "aloe_symbols");
+    Module* sym_module = find_module(modules, "ember_symbols");
     ASSERT(sym_module != nullptr && ((Header*) sym_module->address)->magic == SYMF_MAGIC);
     header = (Header*) sym_module->address;
 }
