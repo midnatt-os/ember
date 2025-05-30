@@ -74,6 +74,7 @@ extern VmAddressSpace kernel_as;
 void* vm_map_anon(VmAddressSpace* as, void* hint, size_t length, VmProtection prot, VmCaching caching, uint64_t flags);
 void* vm_map_direct(VmAddressSpace* as, void* hint, size_t length, paddr_t phys_address, VmProtection prot, VmCaching caching, uint64_t flags);
 void vm_unmap(VmAddressSpace* as, void* address, size_t length);
+size_t vm_copy_to(VmAddressSpace* dest_as, uintptr_t dest_vaddr, void* src, size_t length);
 void vm_load_address_space(VmAddressSpace* as);
 VmAddressSpace* vm_create_address_space();
 void vm_init(KernelAddress kernel_addr, Memmap memmap);

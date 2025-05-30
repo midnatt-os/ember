@@ -3,9 +3,12 @@
 #include "common/log.h"
 #include "memory/hhdm.h"
 #include "memory/pmm.h"
+#include "memory/vm.h"
+#include <stdint.h>
 
 #define VADDR_TO_INDEX(VADDR, LEVEL) (((VADDR) >> ((LEVEL) * 9 + 3)) & 0x1FF)
 #define ADDR_MASK ((uint64_t) 0x000F'FFFF'FFFF'F000)
+#define PAGE_OFFSET_MASK  (PAGE_SIZE - 1)
 
 #define FLAG_PRESENT (1 << 0)
 #define FLAG_RW      (1 << 1)
@@ -93,4 +96,32 @@ void ptm_unmap(VmAddressSpace* as, uintptr_t vaddr) {
     // tlb_shootdown();
 
     spinlock_release(&as->cr3_lock);
+}
+
+
+uintptr_t ptm_virt_to_phys(VmAddressSpace* as, uintptr_t virt_addr) {
+    spinlock_acquire(&as->cr3_lock);
+    uint64_t* table = (uint64_t*) HHDM(as->cr3);
+
+    for (int level = 4; level > 1; level--) {
+        uint64_t idx   = VADDR_TO_INDEX(virt_addr, level);
+        uint64_t entry = table[idx];
+
+        if (!(entry & FLAG_PRESENT)) {
+            spinlock_release(&as->cr3_lock);
+            return 0;
+        }
+
+        uint64_t next_phys = entry & ADDR_MASK;
+        table = (uint64_t*)HHDM(next_phys);
+    }
+
+    uint64_t idx   = VADDR_TO_INDEX(virt_addr, 1);
+    uint64_t entry = table[idx];
+    spinlock_release(&as->cr3_lock);
+
+    if (!(entry & FLAG_PRESENT))
+        return 0;
+
+    return (entry & ADDR_MASK) | (virt_addr & PAGE_OFFSET_MASK);
 }

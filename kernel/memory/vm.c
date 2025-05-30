@@ -1,14 +1,19 @@
 #include "memory/vm.h"
 
 #include "common/assert.h"
+#include "common/lock/spinlock.h"
 #include "common/log.h"
+#include "common/util.h"
 #include "cpu/registers.h"
+#include "lib/list.h"
 #include "lib/math.h"
 #include "lib/mem.h"
 #include "memory/hhdm.h"
 #include "memory/pmm.h"
 #include "memory/ptm.h"
 #include "memory/heap.h"
+#include <stddef.h>
+#include <stdint.h>
 
 #define MIN(A, B) (A < B ? A : B)
 #define REGION_INTERSECTS(BASE1, LENGTH1, BASE2, LENGTH2) ((BASE1) < ((BASE2) + (LENGTH2)) && (BASE2) < ((BASE1) + (LENGTH1)))
@@ -258,6 +263,33 @@ void vm_unmap(VmAddressSpace* as, void* address, size_t length) {
     }
 
     spinlock_release(&as->regions_lock);
+}
+
+size_t vm_copy_to(VmAddressSpace* dest_as, uintptr_t dest_vaddr, void* src, size_t length) {
+    logln(LOG_DEBUG, "VM", "copy_to(dest_as: %#p, dest_vaddr: %#p, src: %#p, length: %#lx)", dest_as, dest_vaddr, src, length);
+    size_t bytes_copied = 0;
+
+    while (bytes_copied < length) {
+        uintptr_t current_vaddr = dest_vaddr + bytes_copied;
+        uintptr_t current_paddr = ptm_virt_to_phys(dest_as, current_vaddr);
+        ASSERT(current_paddr != 0); // TODO: Do something better?
+
+        size_t page_offset = current_vaddr & (PAGE_SIZE - 1);
+
+        size_t bytes_in_page = PAGE_SIZE - page_offset;
+
+        size_t bytes_left = length - bytes_copied;
+
+        size_t chunk = MATH_MIN(bytes_in_page, bytes_left);
+
+        void* dst = (void*) HHDM(current_paddr + page_offset);
+        const void* src_ptr = (const uint8_t*) src + bytes_copied;
+        memcpy(dst, src_ptr, chunk);
+
+        bytes_copied += chunk;
+    }
+
+    return bytes_copied;
 }
 
 void vm_load_address_space(VmAddressSpace* as) {

@@ -1,10 +1,13 @@
 #include <stdatomic.h>
 #include <stdint.h>
 
+#include "abi/sysv/elf.h"
 #include "common/modules.h"
+#include "common/types.h"
 #include "events/event.h"
 #include "lib/list.h"
 #include "limine.h"
+#include "memory/ptm.h"
 #include "nanoprintf.h"
 #include "common/assert.h"
 #include "common/log.h"
@@ -146,9 +149,12 @@ _Atomic size_t next_cpu_slot = 1;
 
     VmAddressSpace* init_proc_as = vm_create_address_space();
 
-    Process* init_proc = process_create("init", init_proc_as);
+    [[maybe_unused]] Process* init_proc = process_create("init", init_proc_as);
 
-    Thread* init_thread = thread_create_user(init_proc, "init_main", 0x69420);
+    uintptr_t entry;
+    ASSERT(elf_load("/usr/bin/init.elf", init_proc_as, &entry) == ELF_RESULT_OK);
+
+    Thread* init_thread = thread_create_user(init_proc, "init_main", entry);
     list_append(&cpu_current()->scheduler->ready_queue, &init_thread->sched_list_node);
 
     sched_start();

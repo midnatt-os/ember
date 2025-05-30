@@ -108,7 +108,7 @@ Thread* thread_create_user(Process* proc, const char* name, uintptr_t entry_rip)
     init_stack->user_rip = entry_rip;
     init_stack->user_cs = GDT_SELECTOR_CODE64_RING3;
     init_stack->user_rflags = 0x202; // reserved | IF
-    init_stack->user_rsp = (uintptr_t) user_stack;
+    init_stack->user_rsp = (uintptr_t) user_stack + USTACK_SIZE;
     init_stack->user_ss = GDT_SELECTOR_DATA64_RING3;
 
     Thread* t = thread_create(proc, name, k_stack, (uintptr_t) init_stack);
