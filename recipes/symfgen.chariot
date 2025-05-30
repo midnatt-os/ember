@@ -1,5 +1,5 @@
 source/symfgen {
-    url: "https://github.com/Aloe-OS/symf_gen"
+    url: "https://github.com/midnatt-os/symf_gen.git"
     type: "git"
     revision: "396174892e3b44b348e7a138795656099dde796e"
 }

@@ -1,4 +1,4 @@
-name = "aloe.img"
+name = "ember.img"
 protective-mbr = true
 
 [[partitions]]

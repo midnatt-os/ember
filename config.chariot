@@ -1,4 +1,4 @@
-@import "recipes/aloe.chariot"
+@import "recipes/ember.chariot"
 @import "recipes/fabricate.chariot"
 @import "recipes/mkimg.chariot"
 @import "recipes/symfgen.chariot"

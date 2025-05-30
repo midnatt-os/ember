@@ -4,14 +4,14 @@ source/limine {
     revision: "v9.x-binary"
 }
 
-source/aloe {
+source/ember {
     url: "."
     type: "local"
 }
 
-package/aloe {
+package/ember {
     dependencies: [
-        source/aloe
+        source/ember
 
         tool/fabricate
 
@@ -24,7 +24,7 @@ package/aloe {
     configure: <sh>
         fabricate configure \
             --builddir=$BUILD_DIR \
-            --config=$SOURCES_DIR/aloe/fab.lua \
+            --config=$SOURCES_DIR/ember/fab.lua \
             --prefix=$PREFIX
     </sh>
     build: <sh>fabricate build --builddir=$BUILD_DIR</sh> // TODO: ninja -j?
@@ -32,8 +32,8 @@ package/aloe {
 }
 
 package/init {
-    dependencies: [ source/aloe, image/clang, image/make ]
-    build: <sh>make -C $SOURCES_DIR/aloe/init TARGET=$BUILD_DIR/init</sh>
+    dependencies: [ source/ember, image/clang, image/make ]
+    build: <sh>make -C $SOURCES_DIR/ember/init TARGET=$BUILD_DIR/init</sh>
     install: <sh>install -D init $INSTALL_DIR$PREFIX/bin/init.elf</sh>
 }
 
@@ -47,22 +47,22 @@ import tarfile
 
 shutil.copytree(f"{os.environ["SYSROOT_DIR"]}", "initrd/")
 
-with tarfile.open("aloe.initrd", "w", format=tarfile.USTAR_FORMAT) as tar:
+with tarfile.open("ember.initrd", "w", format=tarfile.USTAR_FORMAT) as tar:
     for entry in os.listdir("initrd"):
         tar.add("initrd/" + entry, arcname=entry)
     </py>
-    install: <sh>install -D aloe.initrd $INSTALL_DIR</sh>
+    install: <sh>install -D ember.initrd $INSTALL_DIR</sh>
 }
 
 custom/image {
     dependencies: [
         source/limine
-        source/aloe
+        source/ember
 
         tool/mkimg
         tool/symfgen
 
-        package/aloe
+        package/ember
 
         custom/initrd
     ]
@@ -71,13 +71,13 @@ custom/image {
         mkdir -p efi_root/EFI/BOOT
 
         install $SOURCES_DIR/limine/BOOTX64.EFI efi_root/EFI/BOOT/
-        install $SOURCES_DIR/aloe/support/limine.conf efi_root/
-        install $SYSROOT_DIR/usr/bin/aloe.elf efi_root/
+        install $SOURCES_DIR/ember/support/limine.conf efi_root/
+        install $SYSROOT_DIR/usr/bin/ember.elf efi_root/
 
-        install $CUSTOM_DIR/initrd/aloe.initrd efi_root/
-        sym_gen $SYSROOT_DIR/usr/bin/aloe.elf efi_root/aloe_symbols.symf
+        install $CUSTOM_DIR/initrd/ember.initrd efi_root/
+        sym_gen $SYSROOT_DIR/usr/bin/ember.elf efi_root/ember_symbols.symf
 
-        mkimg --config=$SOURCES_DIR/aloe/support/mkimg_aloe.toml
+        mkimg --config=$SOURCES_DIR/ember/support/mkimg_ember.toml
     </sh>
-    install: <sh>install aloe.img $INSTALL_DIR</sh>
+    install: <sh>install ember.img $INSTALL_DIR</sh>
 }

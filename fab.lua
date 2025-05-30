@@ -33,7 +33,7 @@ local c_flags = {
 
 local linker_flags = {
     "-static",
-    "-T" .. fab.path_rel("support/link_aloe.ld")
+    "-T" .. fab.path_rel("support/link_ember.ld")
 }
 
 local cc = builtins.c.get_compiler("clang")
@@ -104,5 +104,5 @@ local objs = builtins.generate(
     }
 )
 
-local kernel = linker:link("aloe.elf", objs, linker_flags)
-kernel:install("bin/aloe.elf")
+local kernel = linker:link("ember.elf", objs, linker_flags)
+kernel:install("bin/ember.elf")

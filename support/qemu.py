@@ -5,12 +5,12 @@ import subprocess
 sys.dont_write_bytecode = True
 import chariot_utils
 
-CHARIOT_CACHE_PATH = "/home/vincent/projects/aloe-chariot-cache"
+CHARIOT_CACHE_PATH = "/home/vincent/projects/ember-cache"
 
 OVMF_PATH = "/usr/share/ovmf/x64/OVMF.4m.fd"
 
 chariot_recipes = [
-    "source/aloe",
+    "source/ember",
     "custom/image"
 ]
 
@@ -23,13 +23,14 @@ qemu_args = [
     "-M", "smm=off",
     "-d", "int",
     "-D", "log.txt",
+    "-monitor", "stdio",
     "-debugcon", "file:/dev/stdout",
     "-S",
     "-s",
     "-no-reboot",
     "-no-shutdown",
     "-display", "none",
-    "-drive", f"format=raw,file={chariot_utils.path("custom/image", "--cache", CHARIOT_CACHE_PATH)}/aloe.img",
+    "-drive", f"format=raw,file={chariot_utils.path("custom/image", "--cache", CHARIOT_CACHE_PATH)}/ember.img",
     "-drive", f"if=pflash,unit=0,format=raw,file={OVMF_PATH},readonly=on"
 ]
 
