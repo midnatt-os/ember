@@ -1,9 +1,12 @@
 #include <stdatomic.h>
 #include <stdint.h>
 
+#include "abi/sysv/auxv.h"
 #include "abi/sysv/elf.h"
+#include "abi/sysv/sysv.h"
 #include "common/modules.h"
 #include "common/types.h"
+#include "cpu/fpu.h"
 #include "events/event.h"
 #include "lib/list.h"
 #include "limine.h"
@@ -31,6 +34,7 @@
 #include "dev/pci.h"
 #include "sys/time.h"
 #include "lib/mem.h"
+#include "syscall/syscall.h"
 
 
 uintptr_t g_hhdm_offset;
@@ -63,6 +67,8 @@ _Atomic size_t next_cpu_slot = 1;
     lapic_init();
     lapic_timer_init();
 
+    fpu_init_cpu();
+
     event_init();
 
     Tss* tss = kmalloc(sizeof(Tss));
@@ -93,6 +99,9 @@ _Atomic size_t next_cpu_slot = 1;
 
     heap_init();
 
+    fpu_init();
+    fpu_init_cpu();
+
     acpi_init(boot_info->rsdp_address);
 
     time_init();
@@ -105,6 +114,7 @@ _Atomic size_t next_cpu_slot = 1;
 
     // Load initrd into tmpfs
     Module* initrd_module = find_module(&boot_info->modules, "initrd");
+    ASSERT(initrd_module != nullptr);
     populate_tmpfs_from_initrd(initrd_module);
 
     cpu_count = boot_info->smp->cpu_count;
@@ -152,10 +162,19 @@ _Atomic size_t next_cpu_slot = 1;
     [[maybe_unused]] Process* init_proc = process_create("init", init_proc_as);
 
     uintptr_t entry;
-    ASSERT(elf_load("/usr/bin/init.elf", init_proc_as, &entry) == ELF_RESULT_OK);
+    ASSERT(elf_load("/usr/bin/init", init_proc_as, &entry) == ELF_RESULT_OK);
 
-    Thread* init_thread = thread_create_user(init_proc, "init_main", entry);
+    char* argv[] = { "/usr/bin/init", nullptr };
+    char* envp[] = { nullptr };
+    Auxv auxv = { .entry = entry };
+
+    #define U_STACK_SIZE 4096 * 4
+    uintptr_t user_stack = sysv_setup_stack(init_proc_as, U_STACK_SIZE, argv, envp, &auxv);
+
+    Thread* init_thread = thread_create_user(init_proc, "init_main", entry, user_stack);
     list_append(&cpu_current()->scheduler->ready_queue, &init_thread->sched_list_node);
+
+    syscall_init();
 
     sched_start();
 

@@ -3,6 +3,7 @@
 #include <stdint.h>
 
 #include "common/assert.h"
+#include "common/log.h"
 #include "lib/math.h"
 #include "lib/mem.h"
 #include "lib/string.h"

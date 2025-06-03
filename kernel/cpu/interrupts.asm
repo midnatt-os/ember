@@ -1,9 +1,16 @@
 extern common_int_handler
 
+%macro MAYBE_SWAPGS 0
+        test qword [rsp + 24], 3
+        jz %%noswap
+        swapgs
+    %%noswap:
+%endmacro
+
 isr_stub:
     cld
 
-    ; TODO: SWAPGS_CONDITIONAL
+    MAYBE_SWAPGS
 
     push rax
     push rbx
@@ -40,6 +47,8 @@ isr_stub:
     pop rcx
     pop rbx
     pop rax
+
+    MAYBE_SWAPGS
 
     add rsp, 16
     iretq

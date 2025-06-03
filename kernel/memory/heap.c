@@ -8,7 +8,7 @@
 #include "lib/mem.h"
 #include "memory/vm.h"
 
-#define POOL_SIZE ((size_t) 4096 * 16) // 64 KiB
+#define POOL_SIZE ((size_t) 4096 * 4000) // 16 mb
 
 
 

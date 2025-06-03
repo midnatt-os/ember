@@ -1,6 +1,7 @@
 #include "sched/sched.h"
 #include "common/log.h"
 #include "cpu/cpu.h"
+#include "cpu/fpu.h"
 #include "cpu/interrupts.h"
 #include "cpu/lapic.h"
 #include "cpu/tss.h"
@@ -59,7 +60,10 @@ static void sched_switch(Thread* this, Thread* next) {
     cpu_current()->scheduler->current_thread = next;
     tss_set_rsp0(cpu_current()->tss, next->kernel_stack.base);
 
-    // TODO: save FS and GS
+    if (this->proc != nullptr)
+        fpu_save(this->fpu_state);
+
+    fpu_restore(next->fpu_state);
 
     [[maybe_unused]] Thread* prev = sched_context_switch(this, next);
     maybe_reschedule_thread(prev);

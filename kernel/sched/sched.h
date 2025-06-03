@@ -5,9 +5,9 @@
 #include "sched/thread.h"
 
 typedef struct {
+    Thread* current_thread;
     List ready_queue;
     Thread* idle_thread;
-    Thread* current_thread;
     Event preemption_event;
 } Scheduler;
 

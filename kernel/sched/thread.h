@@ -21,7 +21,10 @@ typedef enum {
 
 typedef struct Thread {
     uintptr_t rsp;
+    uintptr_t syscall_rsp;
     ThreadStack kernel_stack;
+
+    void* fpu_state;
 
     uint64_t tid;
     char name[16];
@@ -36,4 +39,4 @@ typedef struct Thread {
 extern _Atomic uint64_t next_tid;
 
 Thread* thread_kernel_create(void (*entry)(), const char* name);
-Thread* thread_create_user(Process* proc, const char* name, uintptr_t entry_rip);
+Thread* thread_create_user(Process* proc, const char* name, uintptr_t entry_rip, uintptr_t user_sp);

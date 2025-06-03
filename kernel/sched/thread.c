@@ -1,5 +1,7 @@
 #include "sched/thread.h"
+#include "common/util.h"
 #include "cpu/cpu.h"
+#include "cpu/fpu.h"
 #include "cpu/gdt.h"
 #include "events/event.h"
 #include "lib/list.h"
@@ -20,12 +22,14 @@
 #define USTACK_SIZE (4096 * 4)
 
 typedef struct [[gnu::packed]] {
+    uint64_t gs_base_hi, gs_base_lo, fs_base_hi, fs_base_lo;
     uint64_t r12, r13, r14, r15, rbp, rbx;
     void (*thread_init_common)(Thread* prev);
     void (*entry)();
 } KernelInitStack;
 
 typedef struct [[gnu::packed]] {
+    uint64_t gs_base_hi, gs_base_lo, fs_base_hi, fs_base_lo;
     uint64_t r12, r13, r14, r15, rbp, rbx;
     void (*thread_init_common)(Thread* prev);
     void (*thread_init_user)();
@@ -66,6 +70,9 @@ static Thread* thread_create(Process* proc, const char* name, ThreadStack k_stac
         .event = t_event
     };
 
+    if (proc != nullptr)
+        t->fpu_state = vm_map_anon(&kernel_as, nullptr, ALIGN_UP(fpu_area_size, PAGE_SIZE), VM_PROT_RW, VM_CACHING_DEFAULT, VM_FLAG_ZERO);
+
     strncpy(t->name, name, sizeof(t->name) - 1);
 
     if (proc != nullptr)
@@ -91,11 +98,7 @@ Thread* thread_kernel_create(void (*entry)(), const char* name) {
 }
 
 extern void thread_init_user();
-Thread* thread_create_user(Process* proc, const char* name, uintptr_t entry_rip) {
-    // Create user stack
-    void* user_stack = vm_map_anon(proc->as, nullptr, USTACK_SIZE, VM_PROT_RW, VM_CACHING_DEFAULT, VM_FLAG_NONE);
-    ASSERT(user_stack != nullptr);
-
+Thread* thread_create_user(Process* proc, const char* name, uintptr_t entry_rip, uintptr_t user_sp) {
     // Create Kernel / initial stack;
     ThreadStack k_stack = create_thread_stack(KSTACK_SIZE);
     ASSERT(k_stack.size != 0);
@@ -108,7 +111,7 @@ Thread* thread_create_user(Process* proc, const char* name, uintptr_t entry_rip)
     init_stack->user_rip = entry_rip;
     init_stack->user_cs = GDT_SELECTOR_CODE64_RING3;
     init_stack->user_rflags = 0x202; // reserved | IF
-    init_stack->user_rsp = (uintptr_t) user_stack + USTACK_SIZE;
+    init_stack->user_rsp = user_sp;
     init_stack->user_ss = GDT_SELECTOR_DATA64_RING3;
 
     Thread* t = thread_create(proc, name, k_stack, (uintptr_t) init_stack);

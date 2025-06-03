@@ -10,14 +10,13 @@
 typedef struct Cpu {
     struct Cpu* self;
 
+    Scheduler* scheduler;
+    Tss* tss;
+    List events;
+
     size_t seq_id;
     uint32_t lapic_id;
     uint64_t lapic_timer_freq;
-
-    Tss* tss;
-
-    Scheduler* scheduler;
-    List events;
 } Cpu;
 
 extern Cpu* cpus;

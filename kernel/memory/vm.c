@@ -266,7 +266,6 @@ void vm_unmap(VmAddressSpace* as, void* address, size_t length) {
 }
 
 size_t vm_copy_to(VmAddressSpace* dest_as, uintptr_t dest_vaddr, void* src, size_t length) {
-    logln(LOG_DEBUG, "VM", "copy_to(dest_as: %#p, dest_vaddr: %#p, src: %#p, length: %#lx)", dest_as, dest_vaddr, src, length);
     size_t bytes_copied = 0;
 
     while (bytes_copied < length) {
@@ -285,6 +284,31 @@ size_t vm_copy_to(VmAddressSpace* dest_as, uintptr_t dest_vaddr, void* src, size
         void* dst = (void*) HHDM(current_paddr + page_offset);
         const void* src_ptr = (const uint8_t*) src + bytes_copied;
         memcpy(dst, src_ptr, chunk);
+
+        bytes_copied += chunk;
+    }
+
+    return bytes_copied;
+}
+
+size_t vm_copy_from(void* dest, VmAddressSpace* src_as, uintptr_t src_vaddr, size_t length) {
+    size_t bytes_copied = 0;
+    uint8_t* kd = dest;
+
+    while (bytes_copied < length) {
+        uintptr_t va = src_vaddr + bytes_copied;
+        uintptr_t pa = ptm_virt_to_phys(src_as, va);  // this already = frame_base + (va % PAGE_SIZE)
+
+        if (pa == 0)  // unmapped
+            return bytes_copied;
+
+        size_t page_off   = va & (PAGE_SIZE - 1);
+        size_t bytes_in_page = PAGE_SIZE - page_off;
+        size_t bytes_left    = length - bytes_copied;
+        size_t chunk         = (bytes_in_page < bytes_left) ? bytes_in_page : bytes_left;
+
+        const void* src_ptr = (const void*)HHDM(pa);
+        memcpy(&kd[bytes_copied], src_ptr, chunk);
 
         bytes_copied += chunk;
     }
