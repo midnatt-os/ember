@@ -27,6 +27,8 @@ extern LinkerSymbol __BSS_START, __BSS_END;
 
 
 
+const bool VM_LOGGING = false;
+
 VmAddressSpace kernel_as;
 
 List region_pool = LIST_NEW;
@@ -168,21 +170,25 @@ static void* map_common(VmAddressSpace* as, void* hint, size_t length, paddr_t p
 }
 
 void* vm_map_anon(VmAddressSpace* as, void* hint, size_t length, VmProtection prot, VmCaching caching, uint64_t flags) {
-    logln(LOG_DEBUG, "VM", "map_anon(hint: %#lx, length: %#lx, prot: %c%c%c, caching: %u, flags: %lu)",
-        hint, length,
-        prot.read ? 'R' : '-', prot.write ? 'W' : '-', prot.exec ? 'X' : '-',
-        caching, flags
-    );
+    if (VM_LOGGING) {
+        logln(LOG_DEBUG, "VM", "map_anon(hint: %#lx, length: %#lx, prot: %c%c%c, caching: %u, flags: %lu)",
+            hint, length,
+            prot.read ? 'R' : '-', prot.write ? 'W' : '-', prot.exec ? 'X' : '-',
+            caching, flags
+        );
+    }
 
     return map_common(as, hint, length, 0, prot, caching, VM_REGION_TYPE_ANON, flags);
 }
 
 void* vm_map_direct(VmAddressSpace* as, void* hint, size_t length, paddr_t phys_address, VmProtection prot, VmCaching caching, uint64_t flags) {
-    logln(LOG_DEBUG, "VM", "map_direct(hint: %#lx, length: %#lx, paddr: %#lx, prot: %c%c%c, caching: %u, flags: %lu)",
-        hint, length, phys_address,
-        prot.read ? 'R' : '-', prot.write ? 'W' : '-', prot.exec ? 'X' : '-',
-        caching, flags
-    );
+    if (VM_LOGGING) {
+        logln(LOG_DEBUG, "VM", "map_direct(hint: %#lx, length: %#lx, paddr: %#lx, prot: %c%c%c, caching: %u, flags: %lu)",
+            hint, length, phys_address,
+            prot.read ? 'R' : '-', prot.write ? 'W' : '-', prot.exec ? 'X' : '-',
+            caching, flags
+        );
+    }
 
     return map_common(as, hint, length, phys_address, prot, caching, VM_REGION_TYPE_DIRECT, flags);
 }
