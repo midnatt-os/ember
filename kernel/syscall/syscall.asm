@@ -11,12 +11,17 @@ endstruc
 extern syscall_exit
 extern syscall_debug
 extern syscall_set_tcb
+extern syscall_anon_alloc
+extern syscall_anon_free
 
 section .rodata
 syscall_table:
     dq syscall_exit ; 0
     dq syscall_debug ; 1
     dq syscall_set_tcb ; 2
+    dq syscall_anon_alloc ; 3
+    dq syscall_anon_free ; 4
+
 .length: dq ($ - syscall_table) / 8
 
 section .text

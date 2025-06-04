@@ -79,3 +79,42 @@ SyscallResult syscall_set_tcb(void* ptr) {
 
     return res;
 }
+
+SyscallResult syscall_anon_alloc(size_t size) {
+    SyscallResult res = {};
+
+    if (size == 0 || size % PAGE_SIZE != 0) {
+        res.error = SYSCALL_ERR_INVALID_VALUE;
+        return res;
+    }
+
+    bool prev_state = cpu_int_mask();
+    VmAddressSpace* as = cpu_current()->scheduler->current_thread->proc->as;
+    cpu_int_restore(prev_state);
+
+    void* ptr = vm_map_anon(as, nullptr, size, VM_PROT_RW, VM_CACHING_DEFAULT, VM_FLAG_ZERO);
+    res.value = (uintptr_t) ptr;
+
+    logln(LOG_DEBUG, "SYSCALL", "anon_alloc(size: %#lx) = %#p", size, ptr);
+
+    return res;
+}
+
+SyscallResult syscall_anon_free(void* ptr, size_t size) {
+    SyscallResult res = {};
+
+    if (ptr == nullptr || ((uintptr_t) ptr) % PAGE_SIZE != 0 || size == 0 || size % PAGE_SIZE != 0) {
+        res.error = SYSCALL_ERR_INVALID_VALUE;
+        return res;
+    }
+
+    bool prev_state = cpu_int_mask();
+    VmAddressSpace* as = cpu_current()->scheduler->current_thread->proc->as;
+    cpu_int_restore(prev_state);
+
+    vm_unmap(as, ptr, size);
+
+    logln(LOG_DEBUG, "SYSCALL", "anon_free(ptr: %#p, size: %#lx)", ptr, size);
+
+    return res;
+}

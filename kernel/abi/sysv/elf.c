@@ -3,10 +3,13 @@
 #include <stddef.h>
 
 #include "common/assert.h"
+#include "common/log.h"
 #include "fs/vfs.h"
 #include "memory/heap.h"
 #include "common/util.h"
 #include "memory/vm.h"
+#include "nanoprintf.h"
+
 
 #define ELF64_ID0 0x7F
 #define ELF64_ID1 'E'

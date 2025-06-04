@@ -266,30 +266,29 @@ void vm_unmap(VmAddressSpace* as, void* address, size_t length) {
 }
 
 size_t vm_copy_to(VmAddressSpace* dest_as, uintptr_t dest_vaddr, void* src, size_t length) {
-    size_t bytes_copied = 0;
+        size_t bytes_copied = 0;
 
-    while (bytes_copied < length) {
-        uintptr_t current_vaddr = dest_vaddr + bytes_copied;
-        uintptr_t current_paddr = ptm_virt_to_phys(dest_as, current_vaddr);
-        ASSERT(current_paddr != 0); // TODO: Do something better?
+        while (bytes_copied < length) {
+            uintptr_t va = dest_vaddr + bytes_copied;
+            uintptr_t pa = ptm_virt_to_phys(dest_as, va);
+            ASSERT(pa != 0);
 
-        size_t page_offset = current_vaddr & (PAGE_SIZE - 1);
+            size_t page_off      = va & (PAGE_SIZE - 1);
+            size_t bytes_in_page = PAGE_SIZE - page_off;
+            size_t bytes_left    = length - bytes_copied;
+            size_t chunk         = (bytes_in_page < bytes_left) ? bytes_in_page : bytes_left;
 
-        size_t bytes_in_page = PAGE_SIZE - page_offset;
+            // ptm_virt_to_phys already = frame_base + page_off
+            void*       dst_ptr = (void*)HHDM(pa);
+            const void* src_ptr = (const uint8_t*)src + bytes_copied;
+            memcpy(dst_ptr, src_ptr, chunk);
 
-        size_t bytes_left = length - bytes_copied;
+            bytes_copied += chunk;
+        }
 
-        size_t chunk = MATH_MIN(bytes_in_page, bytes_left);
-
-        void* dst = (void*) HHDM(current_paddr + page_offset);
-        const void* src_ptr = (const uint8_t*) src + bytes_copied;
-        memcpy(dst, src_ptr, chunk);
-
-        bytes_copied += chunk;
+        return bytes_copied;
     }
 
-    return bytes_copied;
-}
 
 size_t vm_copy_from(void* dest, VmAddressSpace* src_as, uintptr_t src_vaddr, size_t length) {
     size_t bytes_copied = 0;
