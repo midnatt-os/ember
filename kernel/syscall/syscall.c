@@ -4,12 +4,15 @@
 #include <stdint.h>
 
 #include "abi/syscall/syscall.h"
+#include "common/assert.h"
 #include "common/log.h"
 #include "cpu/cpu.h"
 #include "cpu/gdt.h"
 #include "cpu/registers.h"
 #include "memory/heap.h"
 #include "memory/vm.h"
+#include "sched/sched.h"
+#include "sched/thread.h"
 
 #define MSR_EFER_SCE (1 << 0)
 
@@ -50,8 +53,15 @@ void syscall_init() {
     write_msr(MSR_SFMASK, read_msr(MSR_SFMASK) | (1 << 9));
 }
 
-void syscall_exit() {
+[[noreturn]] void syscall_exit(int code, bool panicked) {
+    bool prev_state = cpu_int_mask();
+    Thread* t = cpu_current()->scheduler->current_thread;
+    cpu_int_restore(prev_state);
 
+    logln(LOG_DEBUG, "SYSCALL", "exit(tid: %li, name: %s, code: %i, panicked: %s)", t->tid, t->name, code, panicked ? "true" : "false");
+
+    sched_yield(STATUS_DONE);
+    ASSERT_UNREACHABLE();
 }
 
 SyscallResult syscall_debug(char* str, size_t length) {

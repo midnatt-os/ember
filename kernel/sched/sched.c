@@ -63,7 +63,8 @@ static void sched_switch(Thread* this, Thread* next) {
     if (this->proc != nullptr)
         fpu_save(this->fpu_state);
 
-    fpu_restore(next->fpu_state);
+    if (next->proc != nullptr)
+        fpu_restore(next->fpu_state);
 
     [[maybe_unused]] Thread* prev = sched_context_switch(this, next);
     maybe_reschedule_thread(prev);
