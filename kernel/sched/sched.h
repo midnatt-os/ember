@@ -11,6 +11,10 @@ typedef struct {
     Event preemption_event;
 } Scheduler;
 
+Thread* sched_get_current_thread();
+Process* sched_get_current_process();
+
+void sched_schedule_thread(Thread* t);
 void sched_yield(ThreadStatus target_status);
 void sched_init();
 void sched_start();

@@ -8,6 +8,7 @@
 #include "events/event.h"
 #include "lib/list.h"
 #include "memory/vm.h"
+#include "sched/process.h"
 #include "sched/thread.h"
 #include "common/assert.h"
 #include "sys/time.h"
@@ -22,11 +23,28 @@
 
 #define SCHED (cpu_current()->scheduler)
 
+Thread* sched_get_current_thread() {
+    bool prev = cpu_int_mask();
+    Thread* t = SCHED->current_thread;
+    cpu_int_restore(prev);
+    return t;
+}
 
+Process* sched_get_current_process() {
+    return sched_get_current_thread()->proc;
+}
 
 void sched_yield(ThreadStatus target_status);
 static void preempt(void* target_status) {
     sched_yield((ThreadStatus) (uintptr_t) target_status);
+}
+
+void sched_schedule_thread(Thread* t) {
+    t->status = STATUS_READY;
+
+    bool prev = cpu_int_mask();
+    list_append(&SCHED->ready_queue, &t->sched_list_node);
+    cpu_int_restore(prev);
 }
 
 void maybe_reschedule_thread(Thread* t) {
@@ -41,13 +59,13 @@ void maybe_reschedule_thread(Thread* t) {
         }
     }
 
-     SCHED->preemption_event = (Event) {
+    SCHED->preemption_event = (Event) {
         .deadline = time_current() + THREAD_QUANTUM,
         .callback = preempt,
         .callback_arg = (void*) STATUS_READY
-     };
+    };
 
-     event_add(&SCHED->preemption_event);
+    event_add(&SCHED->preemption_event);
 }
 
 Thread* sched_context_switch(Thread* this, Thread* next);
@@ -103,28 +121,6 @@ void sched_yield(ThreadStatus target_status) {
     sched_switch(this, next);
     cpu_int_restore(prev_state);
 }
-
-
-/*
-[[noreturn]] static void one() {
-    while (true) {
-        log_raw("(cpu%d) one\n", cpu_current()->seq_id);
-        cpu_relax();
-
-        uint64_t n = time_current() + s_to_ns(1);
-        while (time_current() < n);
-    }
-}
-
-[[noreturn]] static void two() {
-    while (true) {
-        log_raw("(cpu%d) two\n", cpu_current()->seq_id);
-        cpu_relax();
-
-        uint64_t n = time_current() + s_to_ns(1);
-        while (time_current() < n);
-    }
-}*/
 
 [[noreturn]] static void sched_idle() {
     while (true) {
