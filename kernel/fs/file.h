@@ -23,3 +23,4 @@ File* file_create(VNode* node, int flags);
 void file_close(File* f);
 ssize_t file_read(File* f, void* buf , size_t len);
 ssize_t file_write(File* f, const void* buf , size_t len);
+off_t file_seek(File* f, off_t offset, int whence);

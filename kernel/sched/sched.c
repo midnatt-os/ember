@@ -54,6 +54,7 @@ void maybe_reschedule_thread(Thread* t) {
         switch (t->status) {
             case STATUS_READY: list_append(&SCHED->ready_queue, &t->sched_list_node); break;
             case STATUS_DONE: break; // TODO: REAP
+            case STATUS_BLOCKED: break;
             case STATUS_RUNNING: ASSERT_UNREACHABLE();
             default: ASSERT_UNREACHABLE();
         }

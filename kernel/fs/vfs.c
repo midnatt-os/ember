@@ -2,6 +2,7 @@
 
 #include "abi/errno.h"
 #include "common/assert.h"
+#include "common/log.h"
 #include "common/types.h"
 #include "fs/vnode.h"
 #include "lib/container.h"
@@ -115,12 +116,12 @@ int vfs_split_path(const char *path, char* parent_buf, size_t parent_size, char*
     return 0;
 }
 
-int vfs_root(VNode** root_node) {
+int vfs_root(VNode** root) {
     if (list_is_empty(&mounts))
         return -ENOENT;
 
     Mount* mount = CONTAINER_OF(list_peek(&mounts), Mount, mounts_node);
-    return mount->ops->root(mount, root_node);
+    return mount->ops->root(mount, root);
 }
 
 int vfs_lookup(VNode* start, const char* path, VNode** result) {
@@ -208,6 +209,7 @@ int vfs_lookup(VNode* start, const char* path, VNode** result) {
 }
 
 int vfs_create_file(VNode* start, const char* parent_path, const char* name, VNode** new) {
+    logln(LOG_DEBUG, "VFS", "vfs_create_file(parent_path: %s, name: %s)", parent_path, name);
     VNode* parent;
     int err;
 
@@ -226,6 +228,7 @@ int vfs_create_file(VNode* start, const char* parent_path, const char* name, VNo
 }
 
 int vfs_create_dir(VNode* start, const char* parent_path, const char* name, VNode** new) {
+    logln(LOG_DEBUG, "VFS", "vfs_create_dir(parent_path: %s, name: %s)", parent_path, name);
     VNode* parent;
     int err;
 

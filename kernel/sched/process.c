@@ -1,6 +1,8 @@
 #include "sched/process.h"
+#include "common/assert.h"
 #include "common/lock/mutex.h"
 #include "fs/fd.h"
+#include "fs/vnode.h"
 #include "lib/list.h"
 #include "memory/vm.h"
 #include "memory/heap.h"
@@ -17,7 +19,10 @@ Process* process_create(const char* name, VmAddressSpace* as) {
         .pid = next_pid++,
         .as = as,
         .threads = LIST_NEW,
+        .lock = MUTEX_NEW
     };
+
+    ASSERT(vfs_root(&proc->cwd) >= 0);
 
     fd_init(&proc->fds);
 

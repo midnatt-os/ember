@@ -8,13 +8,12 @@
 #define SYSCALL_ANON_ALLOC 3
 #define SYSCALL_ANON_FREE 4
 #define SYSCALL_OPEN 5
-
-typedef enum : uint64_t {
-    SYSCALL_ERR_NONE = 0,
-    SYSCALL_ERR_INVALID_VALUE,
-} SyscallError;
+#define SYSCALL_CLOSE 6
+#define SYSCALL_READ 7
+#define SYSCALL_WRITE 8
+#define SYSCALL_SEEK 9
 
 typedef struct {
     uint64_t value;
-    SyscallError error;
+    int error;
 } SyscallResult;

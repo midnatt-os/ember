@@ -3,6 +3,8 @@
 #include <stddef.h>
 
 #include "abi/fcntl.h"
+#include "abi/seek_whence.h"
+#include "abi/errno.h"
 #include "common/lock/mutex.h"
 #include "common/log.h"
 #include "common/types.h"
@@ -44,8 +46,10 @@ ssize_t file_read(File* f, void* buf , size_t len) {
     mutex_acquire(&f->lock);
     ssize_t res = f->node->ops->read(f->node, buf, len, f->off);
 
-    if (res <= 0)
+    if (res <= 0) {
+        mutex_release(&f->lock);
         return res;
+    }
 
     f->off += res;
     mutex_release(&f->lock);
@@ -75,4 +79,41 @@ ssize_t file_write(File* f, const void* buf , size_t len) {
 
     mutex_release(&f->lock);
     return res;
+}
+
+off_t file_seek(File* f, off_t offset, int whence) {
+    mutex_acquire(&f->lock);
+
+    off_t base;
+    switch (whence) {
+        case SEEK_SET:
+            base = 0;
+            break;
+        case SEEK_CUR:
+            base = f->off;
+            break;
+        case SEEK_END: {
+            Attributes attr;
+            int err = f->node->ops->get_attr(f->node, &attr);
+            if (err < 0) {
+                mutex_release(&f->lock);
+                return -err;
+            }
+            base = attr.size;
+            break;
+        }
+        default:
+            mutex_release(&f->lock);
+            return -EINVAL;
+    }
+
+    off_t new_off = base + offset;
+    if (new_off < 0) {
+        mutex_release(&f->lock);
+        return -EINVAL;
+    }
+
+    f->off = new_off;
+    mutex_release(&f->lock);
+    return new_off;
 }

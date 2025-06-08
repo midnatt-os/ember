@@ -30,6 +30,7 @@ int vfs_mount(const char* path, const char* fs_type, MountOps* ops);
 
 int vfs_split_path(const char *path, char* parent_buf, size_t parent_size, char* name_buf, size_t name_size);
 
+int vfs_root(VNode** root);
 int vfs_lookup(VNode* start, const char* path, VNode** result);
 int vfs_create_file(VNode* start, const char* parent_path, const char* name, VNode** new);
 int vfs_create_dir(VNode* start, const char* parent_path, const char* name, VNode** new);

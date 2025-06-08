@@ -1,6 +1,7 @@
 #include "common/lock/mutex.h"
 #include "common/assert.h"
 #include "common/lock/spinlock.h"
+#include "common/log.h"
 #include "lib/list.h"
 #include "sched/sched.h"
 #include "sched/thread.h"
@@ -28,7 +29,6 @@ void mutex_acquire(Mutex* mutex) {
 
     Thread* self = sched_get_current_thread();
     list_append(&mutex->wait_queue, &self->wait_list_node);
-
     spinlock_release(&mutex->lock);
 
     sched_yield(STATUS_BLOCKED);
