@@ -3,6 +3,8 @@
 #include <stdint.h>
 #include <stddef.h>
 
+#include "common/types.h"
+#include "fs/vnode.h"
 #include "nanoprintf.h"
 #include "common/assert.h"
 #include "common/log.h"
@@ -36,7 +38,7 @@ typedef struct [[gnu::packed]] {
 
 
 
-static uint64_t parse_file_size(const char* src, size_t len) {
+[[maybe_unused]]static uint64_t parse_file_size(const char* src, size_t len) {
     uint64_t value = 0;
 
     for (size_t i = 0; i < len; i++) {
@@ -51,7 +53,7 @@ static uint64_t parse_file_size(const char* src, size_t len) {
     return value;
 }
 
-void populate_tmpfs_from_initrd(Module* initrd_module) {
+void populate_tmpfs_from_initrd([[maybe_unused]]Module* initrd_module) {
     uintptr_t cursor = (uintptr_t) initrd_module->address;
     uintptr_t archive_end = cursor + initrd_module->size;
 
@@ -75,16 +77,20 @@ void populate_tmpfs_from_initrd(Module* initrd_module) {
         // \0: file ; 5: dir
         ASSERT(type != '\0' || type != '5');
 
+        char parent[256], name[256];
+        ASSERT(vfs_split_path(filename, parent, sizeof(parent), name, sizeof(name)) == 0);
+
         if (type == '5') {
             VNode* new_node;
-            vfs_create_dir(filename, &new_node);
+
+            ASSERT(vfs_create_dir(nullptr, parent, name, &new_node) == 0);
+            vnode_unref(new_node);
         } else {
             void* data = (void*) cursor + BLOCK_SIZE;
-
             VNode* new_node;
-            size_t written;
-            vfs_create_file(filename, &new_node);
-            vfs_write(filename, data, 0, file_size, &written);
+
+            ASSERT(vfs_create_file(nullptr, parent, name, &new_node) == 0);
+            ASSERT(vfs_write(nullptr, filename, data, file_size, 0) == (ssize_t) file_size);
         }
 
         cursor += BLOCK_SIZE + ALIGN_UP(file_size, BLOCK_SIZE);

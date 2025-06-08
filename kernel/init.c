@@ -110,7 +110,7 @@ _Atomic size_t next_cpu_slot = 1;
 
     // Mount tmpfs at root
     logln(LOG_INFO, "VFS", "Mounting tmpfs at '/' (rootfs)");
-    ASSERT(vfs_mount("/", &tmpfs_ops) == VFS_RES_OK);
+    ASSERT(vfs_mount("/", "tmpfs", &tmpfs_ops) == 0);
 
     // Load initrd into tmpfs
     Module* initrd_module = find_module(&boot_info->modules, "initrd");
@@ -173,6 +173,7 @@ _Atomic size_t next_cpu_slot = 1;
 
     Thread* init_thread = thread_create_user(init_proc, "init_main", entry, user_stack);
     list_append(&cpu_current()->scheduler->ready_queue, &init_thread->sched_list_node);
+
 
     syscall_init();
 

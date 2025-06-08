@@ -9,8 +9,10 @@
 #include "cpu/cpu.h"
 #include "cpu/gdt.h"
 #include "cpu/registers.h"
+#include "fs/vfs.h"
 #include "memory/heap.h"
 #include "memory/vm.h"
+#include "sched/process.h"
 #include "sched/sched.h"
 #include "sched/thread.h"
 
@@ -25,7 +27,7 @@ extern void syscall_entry();
 void* copy_buffer_from_user(void* src, size_t length) {
     void* buffer = kmalloc(length);
 
-    VmAddressSpace* as = cpu_current()->scheduler->current_thread->proc->as;
+    VmAddressSpace* as = sched_get_current_process()->as;
     size_t bytes_read = vm_copy_from(buffer, as, (uintptr_t) src, length);
 
     if (bytes_read != length) {
@@ -54,9 +56,7 @@ void syscall_init() {
 }
 
 [[noreturn]] void syscall_exit(int code, bool panicked) {
-    bool prev_state = cpu_int_mask();
-    Thread* t = cpu_current()->scheduler->current_thread;
-    cpu_int_restore(prev_state);
+    Thread* t = sched_get_current_thread();
 
     logln(LOG_DEBUG, "SYSCALL", "exit(tid: %li, name: %s, code: %i, panicked: %s)", t->tid, t->name, code, panicked ? "true" : "false");
 
@@ -98,9 +98,7 @@ SyscallResult syscall_anon_alloc(size_t size) {
         return res;
     }
 
-    bool prev_state = cpu_int_mask();
-    VmAddressSpace* as = cpu_current()->scheduler->current_thread->proc->as;
-    cpu_int_restore(prev_state);
+    VmAddressSpace* as = sched_get_current_process()->as;
 
     void* ptr = vm_map_anon(as, nullptr, size, VM_PROT_RW, VM_CACHING_DEFAULT, VM_FLAG_ZERO);
     res.value = (uintptr_t) ptr;
@@ -118,13 +116,42 @@ SyscallResult syscall_anon_free(void* ptr, size_t size) {
         return res;
     }
 
-    bool prev_state = cpu_int_mask();
-    VmAddressSpace* as = cpu_current()->scheduler->current_thread->proc->as;
-    cpu_int_restore(prev_state);
+    VmAddressSpace* as = sched_get_current_process()->as;
 
     vm_unmap(as, ptr, size);
 
     logln(LOG_DEBUG, "SYSCALL", "anon_free(ptr: %#p, size: %#lx)", ptr, size);
 
     return res;
+}
+
+SyscallResult syscall_open(char* path, [[maybe_unused]]size_t path_length, int flags, [[maybe_unused]] unsigned int mode) {
+    logln(LOG_DEBUG, "SYSCALL", "open(path: %s, flags: %d, mode: %o)", path, flags, mode);
+    /*
+    SyscallResult res = {};
+    Process* proc = sched_get_current_process();
+
+    path = copy_string_from_user(path, path_length);
+    if (path == nullptr) {
+        res.error = SYSCALL_ERR_INVALID_VALUE;
+        return res;
+    }
+
+    VNode* node;
+    if (vfs_lookup(path, &node) != VFS_RES_OK) {
+        res.error = SYSCALL_ERR_INVALID_VALUE; // TODO: file not found etc.
+        return res;
+    }
+
+    File* f = file_create(node, flags);
+
+    int fd = fd_alloc(&proc->fds);
+    if (fd == -1) {
+        res.error = SYSCALL_ERR_INVALID_VALUE; // TODO
+        return res;
+    }
+
+    fd_set(&proc->fds, fd, f);*/
+
+    return (SyscallResult) { .value = 0, .error = SYSCALL_ERR_NONE };
 }

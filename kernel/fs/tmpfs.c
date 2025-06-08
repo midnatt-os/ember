@@ -1,21 +1,30 @@
 #include "fs/tmpfs.h"
 
+#include <stddef.h>
 #include <stdint.h>
 
 #include "common/assert.h"
+#include "common/lock/mutex.h"
 #include "common/log.h"
+#include "fs/vfs.h"
+#include "lib/container.h"
+#include "lib/list.h"
 #include "lib/math.h"
 #include "lib/mem.h"
 #include "lib/string.h"
 #include "memory/heap.h"
+#include "fs/vnode.h"
+#include "abi/errno.h"
 
-#define TMPFS_CTX(VFS) ((TmpfsInfo*) (VFS)->fs_ctx)
-#define TMPFS_NODE(VNODE) ((TmpfsNode*) (VNODE)->node_ctx)
+#define TMPFS_CTX(VFS) ((TmpfsInfo*) (VFS)->data)
+#define TMPFS_NODE(VNODE) ((TmpfsNode*) (VNODE)->data)
 
-typedef struct {
+typedef struct TmpfsNode {
     uint64_t id;
-    char* name;
+    char name[MAX_NAME_LEN+1];
     VNode* vnode;
+
+    struct TmpfsNode* parent;
 
     union {
         struct { List children; } dir;
@@ -34,21 +43,24 @@ typedef struct {
 
 static VNodeOps tmpfs_node_ops;
 
-static TmpfsNode* create_tmpfs_node(Vfs* vfs, char* name, bool is_dir) {
+static TmpfsNode* create_tmpfs_node(Mount* mount, const char* name, bool is_dir) {
     VNode* vnode = kmalloc(sizeof(VNode));
 
     *vnode = (VNode) {
-        .vfs = vfs,
+        .mount = mount,
         .ops = &tmpfs_node_ops,
-        .type = is_dir ? VNODE_DIR : VNODE_FILE,
+        .type = is_dir ? VNODE_TYPE_DIR : VNODE_TYPE_FILE,
+        .lock = MUTEX_NEW,
+        .ref_count = 0
     };
 
     TmpfsNode* node = kmalloc(sizeof(TmpfsNode));
 
     *node = (TmpfsNode) {
-        .id = TMPFS_CTX(vfs)->id_counter++,
-        .name = name,
+        .id = TMPFS_CTX(mount)->id_counter++,
     };
+
+    strncpy(node->name, name, strlen(name)+1);
 
     if (is_dir) {
         node->dir.children = LIST_NEW;
@@ -58,16 +70,19 @@ static TmpfsNode* create_tmpfs_node(Vfs* vfs, char* name, bool is_dir) {
     }
 
     node->vnode = vnode;
-    vnode->node_ctx = node;
+    vnode->data = node;
 
     return node;
 }
 
-static TmpfsNode* find_in_dir(TmpfsNode* dir_node, char* name) {
-    ASSERT(dir_node->vnode->type == VNODE_DIR);
+static TmpfsNode* find_in_dir(TmpfsNode* dir_node, const char* name) {
+    ASSERT(dir_node->vnode->type == VNODE_TYPE_DIR);
+
+    if (name[0] == '.' && name[1] == '.' && name[2] == '\0')
+        return dir_node->parent;
 
     LIST_FOREACH(dir_node->dir.children, n) {
-        TmpfsNode* node = LIST_ELEMENT_OF(n, TmpfsNode, list_node);
+        TmpfsNode* node = CONTAINER_OF(n, TmpfsNode, list_node);
 
         if (streq(node->name, name))
             return node;
@@ -78,36 +93,44 @@ static TmpfsNode* find_in_dir(TmpfsNode* dir_node, char* name) {
 
 /* TMPFS NODE ops  */
 
-static VfsResult tmpfs_node_lookup(VNode* node, char* name, VNode** found_node) {
-    if (node->type != VNODE_DIR)
-        return VFS_RES_NOT_DIR;
+static int tmpfs_lookup(VNode* node, const char* name, VNode** found) {
+    if (node->type != VNODE_TYPE_DIR)
+        return -ENOTDIR;
 
-    TmpfsNode* tmpfs_node = find_in_dir((TmpfsNode*) node->node_ctx, name);
-    if (tmpfs_node == nullptr)
-        return VFS_RES_NOT_FOUND;
+    TmpfsNode* match = find_in_dir(TMPFS_NODE(node), name);
+    if (match == nullptr)
+        return -ENOENT;
 
-    *found_node = tmpfs_node->vnode;
+    vnode_ref(match->vnode);
+    *found = match->vnode;
 
-    return VFS_RES_OK;
+    return 0;
 }
 
 /* TMPFS ops */
 
-static VfsResult tmpfs_mount(Vfs* vfs) {
+static int tmpfs_mount(Mount* mount) {
     TmpfsInfo* info = kmalloc(sizeof(TmpfsInfo));
 
-    vfs->fs_ctx = info;
-    info->root = create_tmpfs_node(vfs, "root", true); // TODO: should the root node really be named root?
+    mount->data = info;
+    info->root = create_tmpfs_node(mount, "root", true); // TODO: should the root node really be named root?
+    info->root->vnode->is_root = true;
 
-    return VFS_RES_OK;
+    return 0;
 }
 
-static VfsResult tmpfs_root(Vfs* vfs, VNode** node) {
-    *node = TMPFS_CTX(vfs)->root->vnode;
-    return VFS_RES_OK;
+static int tmpfs_root(Mount* mount, VNode** node) {
+    *node = TMPFS_CTX(mount)->root->vnode;
+    vnode_ref(*node);
+    return 0;
 }
 
-static VfsResult tmpfs_read_dir(VNode* node, size_t* offset, DirEntry* dir_entry) {
+void tmpfs_free(VNode* node) {
+    logln(LOG_DEBUG, "TMPFS", "tmpfs_free(%#p (%s))", node, TMPFS_NODE(node)->name);
+}
+
+/*
+static int tmpfs_read_dir(VNode* node, size_t* offset, DirEntry* dir_entry) {
     TmpfsNode* tmp_node = TMPFS_NODE(node);
     size_t i = 0;
 
@@ -125,89 +148,94 @@ static VfsResult tmpfs_read_dir(VNode* node, size_t* offset, DirEntry* dir_entry
     }
 
     return VFS_RES_END;
-}
+}*/
 
-VfsResult tmpfs_create_file(VNode* parent, char* name, VNode** new_node) {
-    if (parent->type != VNODE_DIR)
-        return VFS_RES_NOT_DIR;
-
-    TmpfsNode* dir = TMPFS_NODE(parent);
-
-    TmpfsNode* file_node = create_tmpfs_node(parent->vfs, name, false);
-    list_append(&dir->dir.children, &file_node->list_node);
-    *new_node = file_node->vnode;
-
-    return VFS_RES_OK;
-}
-
-VfsResult tmpfs_create_dir(VNode* parent, char* name, VNode** new_node) {
-    if (parent->type != VNODE_DIR)
-        return VFS_RES_NOT_DIR;
+int tmpfs_create_file(VNode* parent, const char* name, VNode** new) {
+    if (parent->type != VNODE_TYPE_DIR)
+        return -ENOTDIR;
 
     TmpfsNode* dir = TMPFS_NODE(parent);
 
-    TmpfsNode* file_node = create_tmpfs_node(parent->vfs, name, true);
-    list_append(&dir->dir.children, &file_node->list_node);
-    *new_node = file_node->vnode;
+    TmpfsNode* child = create_tmpfs_node(parent->mount, name, false);
 
-    return VFS_RES_OK;
+    child->parent = dir;
+    list_append(&dir->dir.children, &child->list_node);
+
+    vnode_ref(child->vnode);
+    *new = child->vnode;
+
+    return 0;
 }
 
-VfsResult tmpfs_write(VNode* node, void* buf, size_t off, size_t len, size_t* written) {
+int tmpfs_create_dir(VNode* parent, const char* name, VNode** new) {
+    if (parent->type != VNODE_TYPE_DIR)
+        return -ENOTDIR;
+
+    TmpfsNode* dir = TMPFS_NODE(parent);
+
+    TmpfsNode* child = create_tmpfs_node(parent->mount, name, true);
+
+    child->parent = dir;
+    list_append(&dir->dir.children, &child->list_node);
+
+    vnode_ref(child->vnode);
+    *new = child->vnode;
+
+    return 0;
+}
+
+ssize_t tmpfs_read(VNode* node, void* buf, size_t len, off_t off) {
     TmpfsNode* n = TMPFS_NODE(node);
 
-    *written = 0;
+    if (node->type == VNODE_TYPE_DIR)
+        return -EISDIR;
 
-    if (node->type != VNODE_FILE)
-        return VFS_RES_NOT_FILE;
+    if ((size_t) off >= n->file.length)
+        return 0;
 
-    if (off + len > n->file.length) {
-        n->file.base = krealloc(n->file.base, n->file.length, off + len);
-        n->file.length = off + len;
+    size_t available = n->file.length - (size_t) off;
+    size_t to_read = MATH_MIN(len, available);
+
+    memcpy(buf, n->file.base + off, to_read);
+    return to_read;
+}
+
+ssize_t tmpfs_write(VNode* node, const void* buf, size_t len, off_t off) {
+    TmpfsNode *n = TMPFS_NODE(node);
+
+    if (node->type == VNODE_TYPE_DIR)
+        return -EISDIR;
+
+    size_t new_len = (size_t) off + len;
+    if (new_len > n->file.length) {
+        void *new_base = krealloc(n->file.base, n->file.length, new_len);
+        n->file.base = new_base;
+        n->file.length = new_len;
     }
 
     memcpy(n->file.base + off, buf, len);
-    *written = len;
-
-    return VFS_RES_OK;
+    return len;
 }
 
-// TODO: Combine read and write?
-VfsResult tmpfs_read(VNode* node, void* buf, size_t off, size_t len, size_t* read) {
+int tmpfs_get_attr(VNode* node, Attributes* attr) {
     TmpfsNode* n = TMPFS_NODE(node);
 
-    *read = 0;
-
-    if (node->type != VNODE_FILE)
-        return VFS_RES_NOT_FILE;
-
-    size_t available = n->file.length > off ? n->file.length - off : 0;
-    size_t to_read = available < len ? available : len;
-
-    memcpy(buf, n->file.base + off, to_read);
-    *read = to_read;
-
-    return VFS_RES_OK;
-}
-
-VfsResult tmpfs_get_attr(VNode* node, VNodeAttributes* attr) {
-    TmpfsNode* n = TMPFS_NODE(node);
-
-    *attr = (VNodeAttributes) {
+    *attr = (Attributes) {
         .size = n->file.length,
     };
 
-    return VFS_RES_OK;
+    return 0;
 }
 
 static VNodeOps tmpfs_node_ops = {
-    .lookup      = tmpfs_node_lookup,
-    .read_dir    = tmpfs_read_dir,
+    .lookup      = tmpfs_lookup,
+    .free        = tmpfs_free,
     .create_file = tmpfs_create_file,
     .create_dir  = tmpfs_create_dir,
-    .write       = tmpfs_write,
     .read        = tmpfs_read,
+    .write       = tmpfs_write,
     .get_attr = tmpfs_get_attr,
+    //.read_dir    = tmpfs_read_dir,
 };
 
-VfsOps tmpfs_ops = { .mount = tmpfs_mount, .root = tmpfs_root };
+MountOps tmpfs_ops = { .mount = tmpfs_mount, .root = tmpfs_root };

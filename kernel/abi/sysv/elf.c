@@ -4,7 +4,9 @@
 
 #include "common/assert.h"
 #include "common/log.h"
+#include "common/types.h"
 #include "fs/vfs.h"
+#include "fs/vnode.h"
 #include "memory/heap.h"
 #include "common/util.h"
 #include "memory/vm.h"
@@ -63,17 +65,16 @@ typedef struct [[gnu::packed]] {
     elf64_xword_t align;
 } Elf64ProgHdr;
 
-static ElfResult elf_read(VNode* elf_vnode, ElfFile** elf_file) {
-    VNodeAttributes file_attr;
+[[maybe_unused]]static ElfResult elf_read([[maybe_unused]]VNode* elf_vnode,[[maybe_unused]] ElfFile** elf_file) {
+    Attributes file_attr;
 
-    if (elf_vnode->ops->get_attr(elf_vnode, &file_attr) != VFS_RES_OK)
+    if (elf_vnode->ops->get_attr(elf_vnode, &file_attr) < 0)
         return ELF_RESULT_ERR_FS;
 
     Elf64FileHdr elf_file_hdr;
 
-    size_t read_count;
-    if (elf_vnode->ops->read(elf_vnode, &elf_file_hdr, 0, sizeof(Elf64FileHdr), &read_count) != VFS_RES_OK
-        || read_count != sizeof(Elf64FileHdr))
+    ssize_t res;
+    if ((res = elf_vnode->ops->read(elf_vnode, &elf_file_hdr, sizeof(Elf64FileHdr), 0)) < 0 || res != sizeof(Elf64FileHdr))
         return ELF_RESULT_ERR_FS;
 
     if (!ELF64_ID_VALID(elf_file_hdr.e_ident))
@@ -97,18 +98,18 @@ static ElfResult elf_read(VNode* elf_vnode, ElfFile** elf_file) {
         .phdrs_size = elf_file_hdr.e_phentsize,
         .phdrs_offset = elf_file_hdr.e_phoff,
         .phdrs_count = elf_file_hdr.e_phnum
-    };
+        };
 
     return ELF_RESULT_OK;
 }
 
-ElfResult elf_load(char* path_to_elf, VmAddressSpace* as, uintptr_t* entry) {
+ElfResult elf_load([[maybe_unused]] char* path_to_elf,[[maybe_unused]] VmAddressSpace* as, [[maybe_unused]]uintptr_t* entry) {
     ElfFile* elf_file;
     ElfResult elf_res;
 
     VNode* elf_vnode;
 
-    if (vfs_lookup((char*) path_to_elf, &elf_vnode) != VFS_RES_OK)
+    if (vfs_lookup(nullptr, path_to_elf, &elf_vnode) < 0)
         return ELF_RESULT_ERR_FS;
 
     if ((elf_res = elf_read(elf_vnode, &elf_file)) != ELF_RESULT_OK)
@@ -116,11 +117,10 @@ ElfResult elf_load(char* path_to_elf, VmAddressSpace* as, uintptr_t* entry) {
 
     for (size_t i = 0; i < elf_file->phdrs_count; i++) {
         Elf64ProgHdr ph;
-        size_t read_count;
         elf64_off_t off = elf_file->phdrs_offset + i * elf_file->phdrs_size;
 
-        if (elf_vnode->ops->read(elf_vnode, &ph, off, sizeof(Elf64ProgHdr), &read_count) != VFS_RES_OK
-            || read_count != sizeof(Elf64ProgHdr))
+        size_t res;
+        if ((res = elf_vnode->ops->read(elf_vnode, &ph, sizeof(Elf64ProgHdr), off)) < 0 || res != sizeof(Elf64ProgHdr))
             return ELF_RESULT_ERR_FS;
 
         if (ph.type != ELF64_PT_LOAD)
@@ -140,7 +140,7 @@ ElfResult elf_load(char* path_to_elf, VmAddressSpace* as, uintptr_t* entry) {
 
         uint8_t *tmp = kmalloc(ph.filesz);
 
-        if (elf_vnode->ops->read(elf_vnode, tmp, ph.offset, ph.filesz, &read_count) != VFS_RES_OK || read_count != ph.filesz) {
+        if ((res = elf_vnode->ops->read(elf_vnode, tmp, ph.filesz, ph.offset)) < 0 || res != ph.filesz) {
             kfree(tmp);
             return ELF_RESULT_ERR_FS;
         }

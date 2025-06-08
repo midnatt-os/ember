@@ -13,6 +13,7 @@ extern syscall_debug
 extern syscall_set_tcb
 extern syscall_anon_alloc
 extern syscall_anon_free
+extern syscall_open
 
 section .rodata
 syscall_table:
@@ -21,6 +22,7 @@ syscall_table:
     dq syscall_set_tcb ; 2
     dq syscall_anon_alloc ; 3
     dq syscall_anon_free ; 4
+    dq syscall_open ; 5
 
 .length: dq ($ - syscall_table) / 8
 

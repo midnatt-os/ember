@@ -1,4 +1,6 @@
 #include "sched/process.h"
+#include "common/lock/mutex.h"
+#include "fs/fd.h"
 #include "lib/list.h"
 #include "memory/vm.h"
 #include "memory/heap.h"
@@ -14,8 +16,10 @@ Process* process_create(const char* name, VmAddressSpace* as) {
     *proc = (Process) {
         .pid = next_pid++,
         .as = as,
-        .threads = LIST_NEW
+        .threads = LIST_NEW,
     };
+
+    fd_init(&proc->fds);
 
     strcpy(proc->name, name);
 

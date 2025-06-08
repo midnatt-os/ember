@@ -16,6 +16,7 @@ typedef struct {
 typedef enum {
     STATUS_READY,
     STATUS_RUNNING,
+    STATUS_BLOCKED,
     STATUS_DONE,
 } ThreadStatus;
 
@@ -34,6 +35,7 @@ typedef struct Thread {
     Event* event;
     ListNode proc_list_node;
     ListNode sched_list_node;
+    ListNode wait_list_node;
 } Thread;
 
 extern _Atomic uint64_t next_tid;
