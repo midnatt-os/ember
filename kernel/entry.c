@@ -18,6 +18,7 @@ LIMINE_BASE_REVISION(3)
 [[gnu::used, gnu::section(".limine_requests")]]
 LIMINE_REQUESTS_START_MARKER
 
+LIMINE_REQUEST(framebuffer_request, LIMINE_FRAMEBUFFER_REQUEST, 3)
 LIMINE_REQUEST(hhdm_request, LIMINE_HHDM_REQUEST, 3)
 LIMINE_REQUEST(memmap_request, LIMINE_MEMMAP_REQUEST, 3)
 LIMINE_REQUEST(module_request, LIMINE_MODULE_REQUEST, 3)
@@ -42,12 +43,16 @@ LIMINE_REQUESTS_END_MARKER
 BootInfo info;
 
 [[noreturn]] void kentry() {
+    ASSERT(framebuffer_request.response != nullptr);
     ASSERT(hhdm_request.response != nullptr);
     ASSERT(memmap_request.response != nullptr);
     ASSERT(module_request.response != nullptr);
     ASSERT(kernel_address_request.response != nullptr);
     ASSERT(rsdp_request.response != nullptr);
     ASSERT(smp_request.response != nullptr);
+
+    // Framebuffer
+    info.fb = framebuffer_request.response->framebuffers[0];
 
     // HHDM
     info.hhdm_offset = hhdm_request.response->offset;

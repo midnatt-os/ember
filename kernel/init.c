@@ -27,6 +27,7 @@
 #include "sched/sched.h"
 #include "sched/thread.h"
 #include "sys/boot.h"
+#include "sys/framebuffer.h"
 #include "sys/stack_trace.h"
 #include "dev/acpi.h"
 #include "fs/tmpfs.h"
@@ -96,6 +97,8 @@ _Atomic size_t next_cpu_slot = 1;
     interrupts_init();
 
     vm_init(boot_info->kernel_addr, boot_info->memmap);
+
+    framebuffer_init(boot_info->fb);
 
     heap_init();
 

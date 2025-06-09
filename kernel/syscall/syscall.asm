@@ -18,6 +18,7 @@ extern syscall_close
 extern syscall_read
 extern syscall_write
 extern syscall_seek
+extern syscall_fetch_framebuffer
 
 section .rodata
 syscall_table:
@@ -31,6 +32,7 @@ syscall_table:
     dq syscall_read ; 7
     dq syscall_write ; 8
     dq syscall_seek ; 9
+    dq syscall_fetch_framebuffer ; 10
 
 .length: dq ($ - syscall_table) / 8
 

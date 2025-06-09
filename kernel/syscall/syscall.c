@@ -18,11 +18,13 @@
 #include "fs/vfs.h"
 #include "fs/vnode.h"
 #include "memory/heap.h"
+#include "memory/hhdm.h"
 #include "memory/vm.h"
 #include "sched/process.h"
 #include "sched/sched.h"
 #include "sched/thread.h"
 #include "abi/errno.h"
+#include "sys/framebuffer.h"
 
 #define MSR_EFER_SCE (1 << 0)
 
@@ -290,4 +292,18 @@ SyscallResult syscall_seek(int fd, off_t offset, int whence) {
         return SYS_RES(0, (int) new_off);
 
     return SYS_RES((uint64_t) new_off, 0);
+}
+
+SyscallResult syscall_fetch_framebuffer(SysFramebuffer* user_fb) {
+    Process* proc = sched_get_current_process();
+    SysFramebuffer new_fb;
+
+    mutex_acquire(&proc->lock);
+    framebuffer_map(proc->as, &new_fb);
+    mutex_release(&proc->lock);
+
+    if (copy_buffer_to_user(user_fb, &new_fb, sizeof(SysFramebuffer)) < 0)
+        return SYS_RES(0, -EFAULT);
+
+    return SYS_RES(0, 0);
 }

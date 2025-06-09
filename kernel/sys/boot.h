@@ -1,5 +1,6 @@
 #pragma once
 
+#include "limine.h"
 #include "stdint.h"
 
 #define MEMMAP_COUNT 64
@@ -42,7 +43,10 @@ typedef struct {
 typedef struct limine_smp_response Smp;
 typedef struct limine_smp_info SmpInfo;
 
+typedef struct limine_framebuffer Framebuffer;
+
 typedef struct {
+    Framebuffer* fb;
     uintptr_t hhdm_offset;
     Memmap memmap;
     Modules modules;
