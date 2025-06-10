@@ -17,8 +17,13 @@ typedef struct {
     FDTable fds;
     VNode* cwd;
 
+    List children;
+    ListNode child_node;
+
     List threads;
     Mutex lock;
 } Process;
 
 Process* process_create(const char* name, VmAddressSpace* as);
+typedef struct SyscallSavedRegs SyscallSavedRegs;
+Process* process_fork(Process* proc_to_fork, SyscallSavedRegs* regs);

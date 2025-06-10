@@ -75,7 +75,7 @@ void syscall_init() {
 [[noreturn]] void syscall_exit(int code, bool panicked) {
     Thread* t = sched_get_current_thread();
 
-    logln(LOG_DEBUG, "SYSCALL", "exit(tid: %li, name: %s, code: %i, panicked: %s)", t->tid, t->name, code, panicked ? "true" : "false");
+    logln(LOG_DEBUG, "SYSCALL", "exit(tid: %lu, pid: %lu name: %s, code: %i, panicked: %s)", t->tid, t->proc->pid, t->name, code, panicked ? "true" : "false");
 
     sched_yield(STATUS_DONE);
     ASSERT_UNREACHABLE();
@@ -295,6 +295,8 @@ SyscallResult syscall_seek(int fd, off_t offset, int whence) {
 }
 
 SyscallResult syscall_fetch_framebuffer(SysFramebuffer* user_fb) {
+    logln(LOG_DEBUG, "SYSCALL", "fetch_framebuffer()");
+
     Process* proc = sched_get_current_process();
     SysFramebuffer new_fb;
 
@@ -306,4 +308,16 @@ SyscallResult syscall_fetch_framebuffer(SysFramebuffer* user_fb) {
         return SYS_RES(0, -EFAULT);
 
     return SYS_RES(0, 0);
+}
+
+SyscallResult syscall_fork() {
+    Thread* current_thread = sched_get_current_thread();
+
+    logln(LOG_DEBUG, "SYSCALL", "syscall_fork() (pid: %lu, tid: %lu)", current_thread->proc->pid, current_thread->tid);
+
+    [[maybe_unused]] SyscallSavedRegs* regs = (SyscallSavedRegs*) (current_thread->kernel_stack.base - sizeof(SyscallSavedRegs));
+
+    Process* child_proc = process_fork(sched_get_current_process(), regs);
+
+    return SYS_RES(child_proc->pid, 0);
 }

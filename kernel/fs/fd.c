@@ -5,6 +5,7 @@
 #include "abi/errno.h"
 #include "common/lock/mutex.h"
 #include "fs/file.h"
+#include "lib/ref_count.h"
 
 
 
@@ -17,6 +18,22 @@ void fd_init(FDTable* table) {
     table->lock = MUTEX_NEW;
     for (size_t i = 0; i < MAX_FDS; i++)
         table->fds[i] = nullptr;
+}
+
+void fd_clone_table(FDTable* to_clone, FDTable* copy) {
+    mutex_acquire(&to_clone->lock);
+
+    copy->lock = MUTEX_NEW;
+
+    for (size_t i = 0; i < MAX_FDS; i++) {
+        File* f = to_clone->fds[i];
+        copy->fds[i] = f;
+
+        if (f != nullptr)
+            ref_count_inc(&f->ref_count);
+    }
+
+    mutex_release(&to_clone->lock);
 }
 
 int fd_alloc(FDTable* table, File* file) {

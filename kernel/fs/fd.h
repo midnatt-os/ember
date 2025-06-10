@@ -11,6 +11,7 @@ typedef struct {
 } FDTable;
 
 void fd_init(FDTable* table);
+void fd_clone_table(FDTable* to_clone, FDTable* copy);
 int fd_alloc(FDTable* table, File* file);
 int fd_get(FDTable* table, int fd, File** file);
 int fd_close(FDTable* table, int fd);

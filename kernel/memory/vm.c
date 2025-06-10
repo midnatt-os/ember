@@ -8,10 +8,12 @@
 #include "lib/list.h"
 #include "lib/math.h"
 #include "lib/mem.h"
+#include "lib/container.h"
 #include "memory/hhdm.h"
 #include "memory/pmm.h"
 #include "memory/ptm.h"
 #include "memory/heap.h"
+#include "sched/sched.h"
 #include <stddef.h>
 #include <stdint.h>
 
@@ -293,7 +295,7 @@ size_t vm_copy_to(VmAddressSpace* dest_as, uintptr_t dest_vaddr, void* src, size
         }
 
         return bytes_copied;
-    }
+}
 
 
 size_t vm_copy_from(void* dest, VmAddressSpace* src_as, uintptr_t src_vaddr, size_t length) {
@@ -319,6 +321,33 @@ size_t vm_copy_from(void* dest, VmAddressSpace* src_as, uintptr_t src_vaddr, siz
     }
 
     return bytes_copied;
+}
+
+void vm_clone_address_space(VmAddressSpace* dest_as) {
+    VmAddressSpace* src_as = sched_get_current_process()->as;
+
+    spinlock_acquire(&src_as->regions_lock);
+    LIST_FOREACH(src_as->regions, n) {
+        VmRegion* region = CONTAINER_OF(n, VmRegion, list_node);
+
+        VmRegion* new_region = kmalloc(sizeof(VmRegion));
+
+        *new_region = *region;
+        new_region->list_node = (ListNode) {};
+        new_region->as = dest_as;
+
+        region_map(new_region);
+        region_insert(dest_as, new_region);
+
+        switch (region->type) {
+            case VM_REGION_TYPE_DIRECT: break;
+            case VM_REGION_TYPE_ANON: {
+                vm_copy_to(dest_as, new_region->base, (void*) region->base, region->length);
+            }
+        }
+    }
+
+    spinlock_release(&src_as->regions_lock);
 }
 
 void vm_load_address_space(VmAddressSpace* as) {

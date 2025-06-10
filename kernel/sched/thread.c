@@ -36,7 +36,12 @@ typedef struct [[gnu::packed]] {
     uint64_t user_rip, user_cs, user_rflags, user_rsp, user_ss;
 } UserInitStack;
 
-
+// rcx: return rip; r11: rflags
+typedef struct [[gnu::packed]] {
+    KernelInitStack kinit;
+    SyscallSavedRegs regs;
+    uintptr_t syscall_rsp;
+} ForkStack;
 
 _Atomic uint64_t next_tid = 0;
 
@@ -117,6 +122,26 @@ Thread* thread_create_user(Process* proc, const char* name, uintptr_t entry_rip,
     Thread* t = thread_create(proc, name, k_stack, (uintptr_t) init_stack);
 
     logln(LOG_DEBUG, "SCHED", "Created user thread (tid: %lu, name %s)", t->tid, t->name);
+
+    return t;
+}
+
+extern void fork_ret();
+Thread* thread_clone(Process* new_proc, Thread* t_to_clone, SyscallSavedRegs* regs) {
+    ThreadStack k_stack = create_thread_stack(KSTACK_SIZE);
+    ASSERT(k_stack.size != 0);
+
+    ForkStack* init_stack = (ForkStack*) (k_stack.base - sizeof(ForkStack));
+
+    init_stack->kinit.thread_init_common = thread_init_common;
+    init_stack->kinit.entry = fork_ret;
+
+    init_stack->regs = *regs;
+    init_stack->syscall_rsp = t_to_clone->syscall_rsp;
+
+    Thread* t = thread_create(new_proc, t_to_clone->name, k_stack, (uintptr_t) init_stack);
+
+    memcpy(t->fpu_state, t_to_clone->fpu_state, fpu_area_size);
 
     return t;
 }

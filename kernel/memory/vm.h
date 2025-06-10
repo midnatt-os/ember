@@ -76,6 +76,7 @@ void* vm_map_direct(VmAddressSpace* as, void* hint, size_t length, paddr_t phys_
 void vm_unmap(VmAddressSpace* as, void* address, size_t length);
 size_t vm_copy_to(VmAddressSpace* dest_as, uintptr_t dest_vaddr, void* src, size_t length);
 size_t vm_copy_from(void* dest, VmAddressSpace* src_as, uintptr_t src_vaddr, size_t length);
+void vm_clone_address_space(VmAddressSpace* dest_as);
 void vm_load_address_space(VmAddressSpace* as);
 VmAddressSpace* vm_create_address_space();
 void vm_init(KernelAddress kernel_addr, Memmap memmap);

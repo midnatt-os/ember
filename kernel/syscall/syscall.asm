@@ -19,6 +19,7 @@ extern syscall_read
 extern syscall_write
 extern syscall_seek
 extern syscall_fetch_framebuffer
+extern syscall_fork
 
 section .rodata
 syscall_table:
@@ -33,6 +34,7 @@ syscall_table:
     dq syscall_write ; 8
     dq syscall_seek ; 9
     dq syscall_fetch_framebuffer ; 10
+    dq syscall_fork ; 11
 
 .length: dq ($ - syscall_table) / 8
 
@@ -98,6 +100,39 @@ syscall_entry:
 
     mov rsp, qword [r15 + Thread.syscall_rsp]
     xor r15, r15
+
+    swapgs
+    o64 sysret
+
+global fork_ret
+fork_ret:
+    cli
+
+    mov rbx, rdx
+
+    xor r12, r12
+    mov r12, ds
+    mov r12, es
+
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop r11
+    pop r10
+    pop r9
+    pop r8
+    pop rdi
+    pop rsi
+    pop rbp
+    pop rdx
+    pop rcx
+
+    pop r15
+    mov rsp, r15
+    xor r15, r15
+
+    xor rax, rax
 
     swapgs
     o64 sysret

@@ -6,6 +6,11 @@
 
 #include <stdint.h>
 
+typedef struct SyscallSavedRegs {
+    uint64_t r15, r14, r13, r12, r11, r10, r9, r8,
+    rdi, rsi, rbp, rdx, rcx;
+} SyscallSavedRegs;
+
 typedef struct Thread Thread;
 
 typedef struct {
@@ -42,3 +47,4 @@ extern _Atomic uint64_t next_tid;
 
 Thread* thread_kernel_create(void (*entry)(), const char* name);
 Thread* thread_create_user(Process* proc, const char* name, uintptr_t entry_rip, uintptr_t user_sp);
+Thread* thread_clone(Process* new_proc, Thread* t_to_clone, SyscallSavedRegs* regs);

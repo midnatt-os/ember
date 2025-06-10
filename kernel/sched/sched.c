@@ -107,6 +107,13 @@ void sched_yield(ThreadStatus target_status) {
 
     if (next == nullptr) {
         if (target_status == STATUS_READY) {
+            SCHED->preemption_event = (Event) {
+                .deadline = time_current() + THREAD_QUANTUM,
+                .callback = preempt,
+                .callback_arg = (void*) STATUS_READY
+            };
+
+            event_add(&SCHED->preemption_event);
             cpu_int_restore(prev_state);
             return;
         }
