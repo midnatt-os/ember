@@ -14,6 +14,7 @@
 #define SYSCALL_SEEK 9
 #define SYSCALL_FETCH_FRAMEBUFFER 10
 #define SYSCALL_FORK 11
+#define SYSCALL_EXECVE 12
 
 typedef struct {
     uint64_t value;

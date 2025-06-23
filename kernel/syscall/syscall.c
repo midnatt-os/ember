@@ -6,6 +6,8 @@
 #include "abi/fcntl.h"
 #include "abi/seek_whence.h"
 #include "abi/syscall/syscall.h"
+#include "abi/sysv/elf.h"
+#include "abi/sysv/sysv.h"
 #include "common/assert.h"
 #include "common/lock/mutex.h"
 #include "common/log.h"
@@ -65,6 +67,58 @@ void* copy_string_from_user(char* src, size_t length) {
     return str;
 }
 
+#define MAX_ARG_STRLEN 256
+
+char** copy_string_array_from_user(char* const user_array[], uint64_t count) {
+    if (count == 0 || count > 128)
+        return nullptr;
+
+    char** k_array = kmalloc((count + 1) * sizeof(char*));
+    if (!k_array)
+        return nullptr;
+
+    VmAddressSpace* as = sched_get_current_process()->as;
+
+    for (uint64_t i = 0; i < count; ++i) {
+        uintptr_t user_str_ptr;
+
+        // Copy one pointer (from user argv[i])
+        if (vm_copy_from(&user_str_ptr, as, (uintptr_t) &user_array[i], sizeof(user_str_ptr)) != sizeof(user_str_ptr)) {
+            goto fail;
+        }
+
+        if (user_str_ptr == 0) {
+            k_array[i] = NULL;
+            continue;
+        }
+
+        // Now copy the string pointed to by user_str_ptr
+        char* str = copy_string_from_user((char*) user_str_ptr, MAX_ARG_STRLEN);
+        if (!str) {
+            goto fail;
+        }
+
+        k_array[i] = str;
+    }
+
+    k_array[count] = NULL;
+    return k_array;
+
+fail:
+    for (uint64_t j = 0; j < count; ++j) {
+        if (k_array[j]) kfree(k_array[j]);
+    }
+    kfree(k_array);
+    return nullptr;
+}
+
+void free_string_array(char** array) {
+    if (!array) return;
+    for (size_t i = 0; array[i]; ++i)
+        kfree(array[i]);
+    kfree(array);
+}
+
 void syscall_init() {
     write_msr(MSR_EFER, read_msr(MSR_EFER) | MSR_EFER_SCE);
     write_msr(MSR_STAR, ((uint64_t) GDT_SELECTOR_CODE64_RING0 << 32) | ((uint64_t) (GDT_SELECTOR_DATA64_RING3 - 8) << 48));
@@ -103,6 +157,8 @@ SyscallResult syscall_set_tcb(void* ptr) {
 
     logln(LOG_DEBUG, "SYSCALL", "set_tcb(ptr: %#p)", ptr);
     write_msr(MSR_FS_BASE, (uint64_t) ptr);
+    Thread* t = sched_get_current_thread();
+    t->state.fs = (uintptr_t) ptr;
 
     return res;
 }
@@ -320,4 +376,42 @@ SyscallResult syscall_fork() {
     Process* child_proc = process_fork(sched_get_current_process(), regs);
 
     return SYS_RES(child_proc->pid, 0);
+}
+
+SyscallResult syscall_execve(const char *path, size_t path_len, char *const argv[], uint64_t argv_len, char *const envp[], uint64_t envp_len) {
+    Thread* t = sched_get_current_thread();
+
+    path = copy_string_from_user((char*) path, path_len);
+
+    logln(LOG_DEBUG, "SYSCALL", "syscall_execve(path: %s) (pid: %lu, tid: %lu)", path, t->proc->pid, t->tid);
+
+    char** k_argv = copy_string_array_from_user(argv, argv_len);
+    if (!k_argv) {
+        free_string_array(k_argv);
+        return SYS_RES(0, -EFAULT);
+    }
+
+    char** k_envp = copy_string_array_from_user(envp, envp_len);
+    if (!k_envp) {
+        free_string_array(k_argv);
+        return SYS_RES(0, -EFAULT);
+    }
+
+    t->proc->as = vm_create_address_space();
+
+    uintptr_t entry_addr;
+    ElfResult elf_res = elf_load(path, t->proc->as, &entry_addr);
+    if (elf_res != ELF_RESULT_OK) {
+        log_raw("elf fuck: %d", elf_res);
+    }
+
+    Auxv auxv = { .entry = entry_addr };
+    uintptr_t user_stack = sysv_setup_stack(t->proc->as, 4096 * 4, k_argv, k_envp, &auxv);
+
+    Thread* new_t = thread_create_user(t->proc, path, entry_addr, user_stack);
+    sched_schedule_thread(new_t);
+
+    sched_yield(STATUS_DONE);
+    ASSERT_UNREACHABLE();
+    return SYS_RES(0, 0);
 }

@@ -103,7 +103,7 @@ typedef struct [[gnu::packed]] {
     return ELF_RESULT_OK;
 }
 
-ElfResult elf_load([[maybe_unused]] char* path_to_elf,[[maybe_unused]] VmAddressSpace* as, [[maybe_unused]]uintptr_t* entry) {
+ElfResult elf_load(const char* path_to_elf, VmAddressSpace* as, uintptr_t* entry) {
     ElfFile* elf_file;
     ElfResult elf_res;
 

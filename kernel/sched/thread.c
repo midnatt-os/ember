@@ -22,14 +22,12 @@
 #define USTACK_SIZE (4096 * 4)
 
 typedef struct [[gnu::packed]] {
-    uint64_t gs_base_hi, gs_base_lo, fs_base_hi, fs_base_lo;
     uint64_t r12, r13, r14, r15, rbp, rbx;
     void (*thread_init_common)(Thread* prev);
     void (*entry)();
 } KernelInitStack;
 
 typedef struct [[gnu::packed]] {
-    uint64_t gs_base_hi, gs_base_lo, fs_base_hi, fs_base_lo;
     uint64_t r12, r13, r14, r15, rbp, rbx;
     void (*thread_init_common)(Thread* prev);
     void (*thread_init_user)();
@@ -76,7 +74,7 @@ static Thread* thread_create(Process* proc, const char* name, ThreadStack k_stac
     };
 
     if (proc != nullptr)
-        t->fpu_state = vm_map_anon(&kernel_as, nullptr, ALIGN_UP(fpu_area_size, PAGE_SIZE), VM_PROT_RW, VM_CACHING_DEFAULT, VM_FLAG_ZERO);
+        t->state.fpu = vm_map_anon(&kernel_as, nullptr, ALIGN_UP(fpu_area_size, PAGE_SIZE), VM_PROT_RW, VM_CACHING_DEFAULT, VM_FLAG_ZERO);
 
     strncpy(t->name, name, sizeof(t->name) - 1);
 
@@ -141,7 +139,10 @@ Thread* thread_clone(Process* new_proc, Thread* t_to_clone, SyscallSavedRegs* re
 
     Thread* t = thread_create(new_proc, t_to_clone->name, k_stack, (uintptr_t) init_stack);
 
-    memcpy(t->fpu_state, t_to_clone->fpu_state, fpu_area_size);
+    memcpy(t->state.fpu, t_to_clone->state.fpu, fpu_area_size);
+
+    t->state.fs = t_to_clone->state.fs;
+    t->state.gs = t_to_clone->state.gs;
 
     return t;
 }

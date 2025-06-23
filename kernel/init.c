@@ -7,6 +7,8 @@
 #include "common/modules.h"
 #include "common/types.h"
 #include "cpu/fpu.h"
+#include "cpu/ioapic.h"
+#include "dev/ps2kb.h"
 #include "events/event.h"
 #include "lib/list.h"
 #include "limine.h"
@@ -105,7 +107,7 @@ _Atomic size_t next_cpu_slot = 1;
     fpu_init();
     fpu_init_cpu();
 
-    acpi_init(boot_info->rsdp_address);
+    acpi_early_init(boot_info->rsdp_address);
 
     time_init();
 
@@ -143,6 +145,9 @@ _Atomic size_t next_cpu_slot = 1;
     lapic_init();
     lapic_timer_init();
 
+    ioapic_init();
+    acpi_finalize_init();
+
     for (size_t i = 0; i < cpu_count; i++) {
         SmpInfo* cpu_info = boot_info->smp->cpus[i];
         if (cpu_info->lapic_id == boot_info->smp->bsp_lapic_id)
@@ -159,6 +164,8 @@ _Atomic size_t next_cpu_slot = 1;
     cpu_current()->tss = bsp_tss;
 
     sched_init();
+
+    ps2kb_init();
 
     VmAddressSpace* init_proc_as = vm_create_address_space();
 

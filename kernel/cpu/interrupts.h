@@ -1,5 +1,6 @@
 #pragma once
 
+#include "uacpi/types.h"
 #include <stdint.h>
 
 typedef struct [[gnu::packed]] {
@@ -11,7 +12,23 @@ typedef struct [[gnu::packed]] {
 
 typedef void (*InterruptHandler)(InterruptFrame* frame);
 
-void interrupts_set_handler(uint8_t vector, InterruptHandler handler);
-int16_t interrupts_request_vector(InterruptHandler handler);
+typedef enum {
+    INT_HANDLER_NORMAL,
+    INT_HANDLER_UACPI
+} IntHandlerType;
+
+typedef struct {
+    IntHandlerType type;
+    union {
+        InterruptHandler normal_handler;
+        uacpi_interrupt_handler uacpi_handler;
+    };
+    void* arg;
+} InterruptEntry;
+
+
+
+void interrupts_set_handler(uint8_t vector, InterruptEntry* entry);
+int16_t interrupts_request_vector(InterruptEntry* entry);
 void interrupts_load_idt();
 void interrupts_init();

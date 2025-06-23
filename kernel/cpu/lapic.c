@@ -53,6 +53,8 @@ static void lapic_spurious_handler(InterruptFrame* _) {
     lapic_write(REG_EOI, 0);
 }
 
+static InterruptEntry spur_handler = { .type = INT_HANDLER_NORMAL, .normal_handler = lapic_spurious_handler };
+
 static uint64_t ns_to_ticks(uint64_t ns) {
     return CLAMP(cpu_current()->lapic_timer_freq * ns / 1'000'000'000, 1, UINT32_MAX);
 }
@@ -103,6 +105,6 @@ void lapic_init() {
         ASSERT(vm_map_direct(&kernel_as, (void*) HHDM(read_msr(MSR_APIC_BASE) & BASE_MASK),PAGE_SIZE, read_msr(MSR_APIC_BASE) & BASE_MASK, VM_PROT_RW, VM_CACHING_UNCACHED, VM_FLAG_FIXED) != nullptr);
     }
 
-    interrupts_set_handler(LAPIC_SPURIOUS_VECTOR, lapic_spurious_handler);
+    interrupts_set_handler(LAPIC_SPURIOUS_VECTOR, &spur_handler);
     lapic_write(REG_SPURIOUS, LAPIC_SPURIOUS_VECTOR | LAPIC_ENABLE);
 }

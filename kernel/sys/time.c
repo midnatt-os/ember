@@ -18,8 +18,7 @@ void time_register_source(TimeSource* source) {
 }
 
 uint64_t time_current() {
-    ASSERT(time_source != nullptr);
-    return time_source->current();
+    return time_source == nullptr ? 0 : time_source->current();
 }
 
 void time_init() {

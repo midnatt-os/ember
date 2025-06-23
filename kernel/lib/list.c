@@ -1,6 +1,8 @@
 #include "lib/list.h"
 
 #include "common/assert.h"
+#include "common/log.h"
+#include "cpu/cpu.h"
 
 bool list_is_empty(List* list) { return list->count == 0; }
 

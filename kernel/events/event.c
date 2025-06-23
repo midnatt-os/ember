@@ -1,5 +1,6 @@
 #include "events/event.h"
 #include "cpu/cpu.h"
+#include "cpu/interrupts.h"
 #include "cpu/lapic.h"
 #include "lib/list.h"
 #include "sys/time.h"
@@ -51,6 +52,8 @@ void event_cancel(Event *event) {
     list_delete(&cpu_current()->events, &event->list_node);
 }
 
+InterruptEntry event_handler = { .type = INT_HANDLER_NORMAL, .normal_handler = event_handle_next };
+
 void event_handle_next([[maybe_unused]] InterruptFrame* ctx) {
     lapic_eoi();
 
@@ -74,7 +77,7 @@ void event_handle_next([[maybe_unused]] InterruptFrame* ctx) {
 
 void event_init() {
     if (cpu_is_bsp()) {
-        int16_t vec = interrupts_request_vector(event_handle_next);
+        int16_t vec = interrupts_request_vector(&event_handler);
         ASSERT(vec != -1);
         events_vector = vec;
         logln(LOG_INFO, "EVENTS", "Events system initialized");

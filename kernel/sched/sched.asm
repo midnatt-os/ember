@@ -15,30 +15,10 @@ sched_context_switch:
     push r13
     push r12
 
-    mov ecx, MSR_FS_BASE
-    rdmsr
-    push rax
-    push rdx
-
-    mov ecx, MSR_KERNEL_GS_BASE
-    rdmsr
-    push rax
-    push rdx
-
     ; Save rsp into old thread
     mov [rdi + Thread.rsp], rsp
     ; load rsp from new thread
     mov rsp, [rsi + Thread.rsp]
-
-    pop rdx
-    pop rax
-    mov ecx, MSR_KERNEL_GS_BASE
-    wrmsr
-
-    pop rdx
-    pop rax
-    mov ecx, MSR_FS_BASE
-    wrmsr
 
     xor r12, r12
     mov ds, r12

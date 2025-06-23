@@ -29,7 +29,7 @@ local c_flags = {
     "-mgeneral-regs-only",
     "-mabi=sysv",
 
-    "-DUACPI_BAREBONES_MODE",
+    --"-DUACPI_BAREBONES_MODE",
     "-DUACPI_FORMATTED_LOGGING",
 }
 

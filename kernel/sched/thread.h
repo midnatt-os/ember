@@ -30,7 +30,11 @@ typedef struct Thread {
     uintptr_t syscall_rsp;
     ThreadStack kernel_stack;
 
-    void* fpu_state;
+    //void* fpu_state;
+    struct {
+        void* fpu;
+        uint64_t fs, gs;
+    } state;
 
     uint64_t tid;
     char name[16];

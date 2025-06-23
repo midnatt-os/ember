@@ -4,6 +4,7 @@
 #include "cpu/fpu.h"
 #include "cpu/interrupts.h"
 #include "cpu/lapic.h"
+#include "cpu/registers.h"
 #include "cpu/tss.h"
 #include "events/event.h"
 #include "lib/list.h"
@@ -52,10 +53,10 @@ void maybe_reschedule_thread(Thread* t) {
 
     if (t != SCHED->idle_thread) {
         switch (t->status) {
-            case STATUS_READY: list_append(&SCHED->ready_queue, &t->sched_list_node); break;
+            case STATUS_READY: sched_schedule_thread(t); break;
+            case STATUS_RUNNING: break;
             case STATUS_DONE: break; // TODO: REAP
             case STATUS_BLOCKED: break;
-            case STATUS_RUNNING: ASSERT_UNREACHABLE();
             default: ASSERT_UNREACHABLE();
         }
     }
@@ -79,11 +80,17 @@ static void sched_switch(Thread* this, Thread* next) {
     cpu_current()->scheduler->current_thread = next;
     tss_set_rsp0(cpu_current()->tss, next->kernel_stack.base);
 
+    this->state.gs = read_msr(MSR_GS_KERNEL_BASE);
+    this->state.fs = read_msr(MSR_FS_BASE);
+
+    write_msr(MSR_GS_KERNEL_BASE, next->state.gs);
+    write_msr(MSR_FS_BASE, next->state.fs);
+
     if (this->proc != nullptr)
-        fpu_save(this->fpu_state);
+        fpu_save(this->state.fpu);
 
     if (next->proc != nullptr)
-        fpu_restore(next->fpu_state);
+        fpu_restore(next->state.fpu);
 
     [[maybe_unused]] Thread* prev = sched_context_switch(this, next);
     maybe_reschedule_thread(prev);
@@ -149,7 +156,6 @@ void sched_init() {
     npf_snprintf(name, sizeof(name), "idle_cpu%lu", cpu_current()->seq_id);
 
     sched->idle_thread = thread_kernel_create(sched_idle, name);
-    sched->ready_queue = LIST_NEW;
 }
 
 void sched_start() {
@@ -165,12 +171,6 @@ void sched_start() {
     };
 
     cpu_current()->scheduler->current_thread = bsp_thread;
-
-    /*Thread* t_one = thread_kernel_create(one, "one");
-    Thread* t_two = thread_kernel_create(two, "two");
-
-    list_append(&SCHED->ready_queue, &t_one->sched_list_node);
-    list_append(&SCHED->ready_queue, &t_two->sched_list_node);*/
 
     sched_yield(STATUS_DONE);
     ASSERT_UNREACHABLE();

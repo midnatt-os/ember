@@ -20,4 +20,4 @@ typedef enum {
     ELF_RESULT_ERR_INVALID_VERSION,
 } ElfResult;
 
-ElfResult elf_load(char* path_to_elf, VmAddressSpace* as, uintptr_t* entry);
+ElfResult elf_load(const char* path_to_elf, VmAddressSpace* as, uintptr_t* entry);
