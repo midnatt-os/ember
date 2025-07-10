@@ -17,7 +17,7 @@
 
 #define KERNELSPACE_START 0xFFFF'8000'0000'0000
 #define KERNELSPACE_END (UINT64_MAX - PAGE_SIZE)
-#define USERSPACE_START (PAGE_SIZE)
+#define USERSPACE_START (0) // TODO - ld.so relocations (PAGE_SIZE)
 #define USERSPACE_END (((uintptr_t) 1 << 47) - PAGE_SIZE - 1)
 
 #define REGION_OF(NODE) LIST_ELEMENT_OF(NODE, VmRegion, list_node)
@@ -74,6 +74,7 @@ extern VmAddressSpace kernel_as;
 void* vm_map_anon(VmAddressSpace* as, void* hint, size_t length, VmProtection prot, VmCaching caching, uint64_t flags);
 void* vm_map_direct(VmAddressSpace* as, void* hint, size_t length, paddr_t phys_address, VmProtection prot, VmCaching caching, uint64_t flags);
 void vm_unmap(VmAddressSpace* as, void* address, size_t length);
+int vm_mprotect(VmAddressSpace* as, void* addr, size_t length, VmProtection new_prot);
 size_t vm_copy_to(VmAddressSpace* dest_as, uintptr_t dest_vaddr, void* src, size_t length);
 size_t vm_copy_from(void* dest, VmAddressSpace* src_as, uintptr_t src_vaddr, size_t length);
 void vm_clone_address_space(VmAddressSpace* dest_as);

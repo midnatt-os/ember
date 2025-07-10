@@ -1,6 +1,7 @@
 #include "fs/file.h"
 
 #include <stddef.h>
+#include <stdint.h>
 
 #include "abi/fcntl.h"
 #include "abi/seek_whence.h"
@@ -116,4 +117,20 @@ off_t file_seek(File* f, off_t offset, int whence) {
     f->off = new_off;
     mutex_release(&f->lock);
     return new_off;
+}
+
+ssize_t file_ioctl(File* f, uint64_t request, void* argp) {
+    mutex_acquire(&f->lock);
+    int res = f->node->ops->ioctl(f->node, request, argp);
+    mutex_release(&f->lock);
+
+    return res;
+}
+
+int file_stat(File *f, Attributes* attr) {
+    mutex_acquire(&f->lock);
+    int res = f->node->ops->get_attr(f->node, attr);
+    mutex_release(&f->lock);
+
+    return res;
 }

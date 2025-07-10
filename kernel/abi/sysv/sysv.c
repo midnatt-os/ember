@@ -3,6 +3,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "abi/sysv/auxv.h"
 #include "common/assert.h"
 #include "memory/vm.h"
 #include "lib/string.h"
@@ -37,15 +38,15 @@ uintptr_t sysv_setup_stack(VmAddressSpace* as, size_t stack_size, char** argv, c
     sp -= (sp - (12 + 1 + envc + 1 + argc + 1) * sizeof(uint64_t)) % 0x10;
 
     // Auxv
-    WRITE_QWORD(0);                  WRITE_QWORD(0);
-    WRITE_QWORD(X86_64_AUXV_SECURE); WRITE_QWORD(0);
-    WRITE_QWORD(X86_64_AUXV_ENTRY);  WRITE_QWORD(auxv->entry);
-    WRITE_QWORD(X86_64_AUXV_PHDR);   WRITE_QWORD(auxv->phdr);
-    WRITE_QWORD(X86_64_AUXV_PHENT);  WRITE_QWORD(auxv->phent);
-    WRITE_QWORD(X86_64_AUXV_PHNUM);  WRITE_QWORD(auxv->phnum);
+    WRITE_QWORD(0);            WRITE_QWORD(0);
+    WRITE_QWORD(0);            WRITE_QWORD(X86_64_AUXV_SECURE);
+    WRITE_QWORD(auxv->entry);  WRITE_QWORD(X86_64_AUXV_ENTRY);
+    WRITE_QWORD(auxv->phdr);   WRITE_QWORD(X86_64_AUXV_PHDR);
+    WRITE_QWORD(auxv->phent);  WRITE_QWORD(X86_64_AUXV_PHENT);
+    WRITE_QWORD(auxv->phnum);  WRITE_QWORD(X86_64_AUXV_PHNUM);
 
     WRITE_QWORD(0);
-    for(int i = 0; i < envc; i++) {
+    for(int i = envc - 1; i >= 0; i--) {
         WRITE_QWORD(env_data);
         size_t str_sz = strlen(envp[i]) + 1;
         size_t copyto_count = vm_copy_to(as, env_data, envp[i], str_sz);
@@ -54,7 +55,7 @@ uintptr_t sysv_setup_stack(VmAddressSpace* as, size_t stack_size, char** argv, c
     }
 
     WRITE_QWORD(0);
-    for(int i = 0; i < argc; i++) {
+    for(int i = argc - 1; i >= 0; i--) {
         WRITE_QWORD(arg_data);
         size_t str_sz = strlen(argv[i]) + 1;
         size_t copyto_count = vm_copy_to(as, arg_data, argv[i], str_sz);

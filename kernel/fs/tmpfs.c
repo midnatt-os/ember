@@ -125,8 +125,8 @@ static int tmpfs_root(Mount* mount, VNode** node) {
     return 0;
 }
 
-void tmpfs_free(VNode* node) {
-    logln(LOG_DEBUG, "TMPFS", "tmpfs_free(%#p (%s))", node, TMPFS_NODE(node)->name);
+void tmpfs_free([[maybe_unused]] VNode* node) {
+    //logln(LOG_DEBUG, "TMPFS", "tmpfs_free(%#p (%s))", node, TMPFS_NODE(node)->name);
 }
 
 /*
@@ -227,6 +227,10 @@ int tmpfs_get_attr(VNode* node, Attributes* attr) {
     return 0;
 }
 
+int tmpfs_ioctl([[maybe_unused]] VNode* node, [[maybe_unused]] uint64_t request, [[maybe_unused]] void* argp) {
+    return -ENOTTY;
+}
+
 static VNodeOps tmpfs_node_ops = {
     .lookup      = tmpfs_lookup,
     .free        = tmpfs_free,
@@ -234,7 +238,8 @@ static VNodeOps tmpfs_node_ops = {
     .create_dir  = tmpfs_create_dir,
     .read        = tmpfs_read,
     .write       = tmpfs_write,
-    .get_attr = tmpfs_get_attr,
+    .get_attr    = tmpfs_get_attr,
+    .ioctl       = tmpfs_ioctl,
     //.read_dir    = tmpfs_read_dir,
 };
 

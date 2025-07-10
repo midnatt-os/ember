@@ -79,3 +79,52 @@ int fd_close(FDTable* table, int fd) {
     mutex_release(&table->lock);
     return 0;
 }
+
+int fd_dup(FDTable* table, int fd) {
+    mutex_acquire(&table->lock);
+
+    if (table->fds[fd] == nullptr) {
+        mutex_release(&table->lock);
+        return -EBADF;
+    }
+
+    int newfd = -1;
+    for (int i = 0; i < MAX_FDS; i++) {
+        if (table->fds[i] == nullptr) {
+            newfd = i;
+            break;
+        }
+    }
+
+    if (newfd == -1) {
+        mutex_release(&table->lock);
+        return -EMFILE; // too many open files
+    }
+
+    table->fds[newfd] = table->fds[fd];
+    ref_count_inc(&table->fds[newfd]->ref_count);
+
+    mutex_release(&table->lock);
+    return newfd;
+}
+
+
+int fd_dup2(FDTable* table, int fd, int newfd) {
+    mutex_acquire(&table->lock);
+    if (!valid_fd(fd) || table->fds[fd] == nullptr) {
+        mutex_release(&table->lock);
+        return -EBADF;
+    }
+
+    mutex_release(&table->lock);
+
+    if (table->fds[fd] != nullptr)
+        fd_close(table, newfd);
+
+    mutex_acquire(&table->lock);
+    table->fds[newfd] = table->fds[fd];
+    ref_count_inc(&table->fds[newfd]->ref_count);
+    mutex_release(&table->lock);
+
+    return newfd;
+}

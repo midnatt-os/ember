@@ -35,9 +35,22 @@ Process* sched_get_current_process() {
     return sched_get_current_thread()->proc;
 }
 
-void sched_yield(ThreadStatus target_status);
 static void preempt(void* target_status) {
-    sched_yield((ThreadStatus) (uintptr_t) target_status);
+    SCHED->should_yield = true;
+    SCHED->yield_status = (ThreadStatus) (uint64_t) target_status;
+}
+
+void sched_preempt() {
+    event_cancel(SCHED->preemption_event);
+
+    *SCHED->preemption_event = (Event) {
+        .deadline = time_current() + THREAD_QUANTUM,
+        .callback = preempt,
+        .callback_arg = (void*) STATUS_READY,
+        .list_node = {}
+    };
+
+    event_add(SCHED->preemption_event);
 }
 
 void sched_schedule_thread(Thread* t) {
@@ -61,13 +74,7 @@ void maybe_reschedule_thread(Thread* t) {
         }
     }
 
-    SCHED->preemption_event = (Event) {
-        .deadline = time_current() + THREAD_QUANTUM,
-        .callback = preempt,
-        .callback_arg = (void*) STATUS_READY
-    };
-
-    event_add(&SCHED->preemption_event);
+    sched_preempt();
 }
 
 Thread* sched_context_switch(Thread* this, Thread* next);
@@ -92,6 +99,8 @@ static void sched_switch(Thread* this, Thread* next) {
     if (next->proc != nullptr)
         fpu_restore(next->state.fpu);
 
+    log_raw("from: %s ; to: %s\n", this->name, next->name);
+
     [[maybe_unused]] Thread* prev = sched_context_switch(this, next);
     maybe_reschedule_thread(prev);
 }
@@ -109,18 +118,11 @@ void sched_yield(ThreadStatus target_status) {
     ASSERT(!cpu_int_get_state());
 
     Thread* this = SCHED->current_thread;
-
     Thread* next = choose_next_thread();
 
     if (next == nullptr) {
         if (target_status == STATUS_READY) {
-            SCHED->preemption_event = (Event) {
-                .deadline = time_current() + THREAD_QUANTUM,
-                .callback = preempt,
-                .callback_arg = (void*) STATUS_READY
-            };
-
-            event_add(&SCHED->preemption_event);
+            sched_preempt();
             cpu_int_restore(prev_state);
             return;
         }
@@ -137,6 +139,25 @@ void sched_yield(ThreadStatus target_status) {
     cpu_int_restore(prev_state);
 }
 
+static void wake(void* thread) {
+    sched_schedule_thread(thread);
+    sched_yield(STATUS_READY);
+}
+
+void sched_sleep(uint64_t ns) {
+    Thread* t = sched_get_current_thread();
+
+    *t->sleep_event = (Event) {
+        .deadline = time_current() + ns,
+        .callback = wake,
+        .callback_arg = t,
+        .list_node = {}
+    };
+
+    event_add(t->sleep_event);
+    sched_yield(STATUS_BLOCKED);
+}
+
 [[noreturn]] static void sched_idle() {
     while (true) {
         log_raw("cpu%lu idling\n", cpu_current()->seq_id);
@@ -148,6 +169,7 @@ void sched_yield(ThreadStatus target_status) {
 
 void sched_init() {
     Scheduler* sched = kmalloc(sizeof(Scheduler));
+    sched->preemption_event = kmalloc(sizeof(Event));
     sched->ready_queue = LIST_NEW;
 
     cpu_current()->scheduler = sched;
@@ -166,6 +188,7 @@ void sched_start() {
 
     *bsp_thread = (Thread) {
         .tid = next_tid++,
+        .sleep_event = kmalloc(sizeof(Event)),
         .name = "bsp",
         .status = STATUS_DONE
     };

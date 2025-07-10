@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 typedef struct {
-    uint8_t* data;
+    uint64_t* data;
     size_t capacity;
     size_t head, tail;
 } RingBuffer;
@@ -13,5 +13,5 @@ RingBuffer* ringbuf_new(size_t capacity);
 void ringbuf_free(RingBuffer* buf);
 bool ringbuf_empty(const RingBuffer* buf);
 bool ringbuf_full(const RingBuffer* buf);
-bool ringbuf_push(RingBuffer* buf, uint8_t byte);
-bool ringbuf_pop(RingBuffer* buf, uint8_t* out);
+bool ringbuf_push(RingBuffer* buf, uint64_t value);
+bool ringbuf_pop(RingBuffer* buf, uint64_t* out);

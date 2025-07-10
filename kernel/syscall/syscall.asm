@@ -21,6 +21,20 @@ extern syscall_seek
 extern syscall_fetch_framebuffer
 extern syscall_fork
 extern syscall_execve
+extern syscall_mmap
+extern syscall_mprotect
+extern syscall_mkdir
+extern syscall_dup2
+extern syscall_gettime
+extern syscall_nsleep
+extern syscall_getpid
+extern syscall_getcwd
+extern syscall_isatty
+extern syscall_getppid
+extern syscall_ioctl
+extern syscall_fcntl
+extern syscall_stat
+extern syscall_dup
 
 section .rodata
 syscall_table:
@@ -37,6 +51,21 @@ syscall_table:
     dq syscall_fetch_framebuffer ; 10
     dq syscall_fork ; 11
     dq syscall_execve ; 12
+    dq syscall_mmap ; 13
+    dq syscall_mprotect ; 14
+    dq syscall_mkdir ; 15
+    dq syscall_dup2 ; 16
+    dq syscall_gettime ; 17
+    dq syscall_nsleep ; 18
+    dq syscall_getpid ; 19
+    dq syscall_getcwd ; 20
+    dq syscall_isatty ; 21
+    dq syscall_getppid ; 22
+    dq syscall_ioctl ; 23
+    dq syscall_fcntl ; 24
+    dq syscall_stat ; 25
+    dq syscall_dup ; 26
+
 
 .length: dq ($ - syscall_table) / 8
 

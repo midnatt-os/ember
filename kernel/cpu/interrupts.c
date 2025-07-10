@@ -9,6 +9,7 @@
 #include "common/lock/spinlock.h"
 #include "cpu/cpu.h"
 #include "cpu/gdt.h"
+#include "sched/sched.h"
 #include "uacpi/types.h"
 
 #define IDT_SIZE 256
@@ -50,6 +51,12 @@ void common_int_handler(InterruptFrame* frame) {
         case INT_HANDLER_NORMAL: entry->normal_handler(frame); break;
         case INT_HANDLER_UACPI: entry->uacpi_handler(entry->arg); break;
         default: break;
+    }
+
+    Scheduler* sched = cpu_current()->scheduler;
+    if (sched->should_yield) {
+        sched->should_yield = false;
+        sched_yield(sched->yield_status);
     }
 }
 

@@ -36,6 +36,10 @@ static uint64_t caching_to_flags(VmCaching caching) {
     }
 }
 
+static inline void invlpg(void* addr) {
+    __asm__ volatile("invlpg (%0)" : : "r"(addr) : "memory");
+}
+
 void ptm_map(VmAddressSpace* as, uintptr_t vaddr, uintptr_t paddr, VmProtection prot, VmCaching caching, VmPrivilege priv) {
     spinlock_acquire(&as->cr3_lock);
 
@@ -71,6 +75,7 @@ void ptm_map(VmAddressSpace* as, uintptr_t vaddr, uintptr_t paddr, VmProtection 
     __atomic_store(&table[index], &entry, __ATOMIC_SEQ_CST);
 
     //tlb_shootdown();
+    invlpg((void*)vaddr);
 
     spinlock_release(&as->cr3_lock);
 }

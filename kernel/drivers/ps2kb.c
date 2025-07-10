@@ -1,4 +1,4 @@
-#include "dev/ps2kb.h"
+#include "drivers/ps2kb.h"
 #include "common/assert.h"
 #include "common/log.h"
 #include "cpu/cpu.h"
@@ -6,7 +6,12 @@
 #include "cpu/ioapic.h"
 #include "cpu/lapic.h"
 #include "cpu/port.h"
+#include "dev/keyboard.h"
+#include "drivers/ps2kb.h"
+#include "fs/devfs/devfs.h"
+#include "fs/vnode.h"
 #include "lib/ringbuf.h"
+#include "memory/heap.h"
 #include "sched/sched.h"
 #include "sched/thread.h"
 #include "uacpi/namespace.h"
@@ -64,6 +69,8 @@ static const char* kbd_pnpids[] = {
     NULL
 };
 
+PS2Keyboard* kb_device = nullptr;
+
 static uacpi_iteration_decision chk_for_ps2kb(void* found, [[maybe_unused]] uacpi_namespace_node* node, [[maybe_unused]] uint32_t unused) {
     *(bool*) found = true;
     return UACPI_ITERATION_DECISION_BREAK;
@@ -108,77 +115,51 @@ static bool ps2kb_set_scanset2() {
     return port_inb(PS2_DATA_PORT) == PS2_ACK;
 }
 
-Thread* kb_worker_thread = nullptr;
-RingBuffer* sc_buffer = nullptr;
-
 static void keyboard_int_handler(InterruptFrame* _) {
     uint8_t sc = port_inb(PS2_DATA_PORT);
 
-    if (ringbuf_push(sc_buffer, sc) && kb_worker_thread->status == STATUS_BLOCKED)
-        sched_schedule_thread(kb_worker_thread);
+    if (ringbuf_push(kb_device->sc_buffer, sc) && kb_device->worker_thread->status == STATUS_BLOCKED)
+        sched_schedule_thread(kb_device->worker_thread);
 
     lapic_eoi();
 }
 
-
-
-typedef struct {
-    uint8_t scancode;
-    bool released;
-    bool extended;
-} KeyEvent;
-
-typedef enum {
-    SCAN_IDLE,
-    SCAN_F0,       // waiting for release scancode
-    SCAN_E0,       // waiting for extended scancode
-    SCAN_E0_F0     // waiting for extended release
-} ScanState;
-
-typedef struct {
-    ScanState state;
-} ScanParser;
-
-void scanparser_init(ScanParser* parser) {
-    parser->state = SCAN_IDLE;
-}
-
-bool scanparser_feed(ScanParser* p, uint8_t byte, KeyEvent* out_event) {
-    switch (p->state) {
+bool scanparser_feed(uint8_t byte, KeyEvent* out_event) {
+    switch (kb_device->scan_state) {
         case SCAN_IDLE:
             if (byte == 0xF0) {
-                p->state = SCAN_F0;
+                kb_device->scan_state = SCAN_F0;
                 return false;
             } else if (byte == 0xE0) {
-                p->state = SCAN_E0;
+                kb_device->scan_state = SCAN_E0;
                 return false;
             } else {
-                *out_event = (KeyEvent){ .scancode = byte, .released = false, .extended = false };
+                *out_event = (KeyEvent) { .scancode = byte, .released = false, .extended = false };
                 return true;
             }
 
         case SCAN_F0:
-            *out_event = (KeyEvent){ .scancode = byte, .released = true, .extended = false };
-            p->state = SCAN_IDLE;
+            *out_event = (KeyEvent) { .scancode = byte, .released = true, .extended = false };
+            kb_device->scan_state = SCAN_IDLE;
             return true;
 
         case SCAN_E0:
             if (byte == 0xF0) {
-                p->state = SCAN_E0_F0;
+                kb_device->scan_state = SCAN_E0_F0;
                 return false;
             } else {
-                *out_event = (KeyEvent){ .scancode = byte, .released = false, .extended = true };
-                p->state = SCAN_IDLE;
+                *out_event = (KeyEvent) { .scancode = byte, .released = false, .extended = true };
+                kb_device->scan_state = SCAN_IDLE;
                 return true;
             }
 
         case SCAN_E0_F0:
-            *out_event = (KeyEvent){ .scancode = byte, .released = true, .extended = true };
-            p->state = SCAN_IDLE;
+            *out_event = (KeyEvent) { .scancode = byte, .released = true, .extended = true };
+            kb_device->scan_state = SCAN_IDLE;
             return true;
 
         default:
-            p->state = SCAN_IDLE;
+            kb_device->scan_state = SCAN_IDLE;
             return false;
     }
 }
@@ -186,31 +167,25 @@ bool scanparser_feed(ScanParser* p, uint8_t byte, KeyEvent* out_event) {
 void kb_worker() {
     logln(LOG_INFO, "PS2KB", "Worker thread online");
 
-    ScanParser parser;
-    scanparser_init(&parser);
-
     while (true) {
         sched_yield(STATUS_BLOCKED);
 
-        while (!ringbuf_empty(sc_buffer)) {
-            uint8_t sc;
-            ringbuf_pop(sc_buffer, &sc);
+        while (!ringbuf_empty(kb_device->sc_buffer)) {
+            uint64_t sc;
+            ringbuf_pop(kb_device->sc_buffer, &sc);
 
             KeyEvent event;
-            if (scanparser_feed(&parser, sc, &event)) {
-                // Full event received
-                logln(LOG_WARN, "PS2KB", "Key %s 0x%02x %s",
-                    event.extended ? "E0" : "  ",
-                    event.scancode,
-                    event.released ? "released" : "pressed");
+            if (!scanparser_feed(sc, &event)) continue;
 
-                // TODO: map to characters, send to TTY, etc.
-            }
+            ringbuf_push(kb_device->ke_buffer, (uint64_t) &event);
+            if (kb_device->waiting_thread != nullptr)
+                sched_schedule_thread(kb_device->waiting_thread);
         }
     }
 }
 
 static InterruptEntry kb_int_entry = { .type = INT_HANDLER_NORMAL, .normal_handler = keyboard_int_handler };
+
 
 void ps2kb_init() {
     bool found_kb = false;
@@ -260,12 +235,19 @@ void ps2kb_init() {
 
     ioapic_redirect_irq(1, vec, cpu_current()->lapic_id, true);
 
+    kb_device = kmalloc(sizeof(PS2Keyboard));
 
+    kb_device->sc_buffer = ringbuf_new(256);
+    kb_device->ke_buffer = ringbuf_new(256);
+    kb_device->worker_thread = thread_kernel_create(kb_worker, "kb_worker");
+    kb_device->scan_state = SCAN_IDLE;
 
-    kb_worker_thread = thread_kernel_create(kb_worker, "kb_worker");
-    sched_schedule_thread(kb_worker_thread);
+    sched_schedule_thread(kb_device->worker_thread);
 
-    sc_buffer = ringbuf_new(256);
+    VNode* n;
+    ASSERT(vfs_create_dir(nullptr, "/dev", "input", &n) == 0);
+
+    devfs_register("/dev/input", "keyboard", VNODE_TYPE_CHAR_DEV, &kb_dev_ops, kb_device);
 
     logln(LOG_INFO, "PS2KB", "Initialized");
 }

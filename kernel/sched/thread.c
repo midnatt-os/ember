@@ -5,6 +5,9 @@
 #include "cpu/gdt.h"
 #include "events/event.h"
 #include "lib/list.h"
+#include "memory/hhdm.h"
+#include "memory/pmm.h"
+#include "memory/ptm.h"
 #include "memory/vm.h"
 #include "sched/process.h"
 #include "memory/heap.h"
@@ -18,7 +21,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define KSTACK_SIZE (4096 * 2)
+#define KSTACK_SIZE (4096 * 4) // TODO ??? GUARD???
 #define USTACK_SIZE (4096 * 4)
 
 typedef struct [[gnu::packed]] {
@@ -53,9 +56,9 @@ static ThreadStack create_thread_stack(size_t stack_size) {
 
 void maybe_reschedule_thread(Thread* t);
 void thread_init_common([[maybe_unused]] Thread* prev) {
-    log_raw("thread_init\n");
+    log_raw("thread_init: %s\n", sched_get_current_thread()->name);
     maybe_reschedule_thread(prev);
-    event_handle_next(nullptr); // This basically rearms the timer since the first time a thread runs it never finishes the event handler (I think)
+    sched_preempt();
     cpu_int_unmask();
 }
 
@@ -70,11 +73,11 @@ static Thread* thread_create(Process* proc, const char* name, ThreadStack k_stac
         .proc = proc,
         .status = STATUS_READY,
 
-        .event = t_event
+        .sleep_event = t_event
     };
 
     if (proc != nullptr)
-        t->state.fpu = vm_map_anon(&kernel_as, nullptr, ALIGN_UP(fpu_area_size, PAGE_SIZE), VM_PROT_RW, VM_CACHING_DEFAULT, VM_FLAG_ZERO);
+        t->state.fpu = vm_map_anon(&kernel_as, nullptr, ALIGN_UP(fpu_area_size, PAGE_SIZE), VM_PROT_RW, VM_CACHING_DEFAULT, VM_FLAG_NONE);
 
     strncpy(t->name, name, sizeof(t->name) - 1);
 
@@ -104,9 +107,15 @@ extern void thread_init_user();
 Thread* thread_create_user(Process* proc, const char* name, uintptr_t entry_rip, uintptr_t user_sp) {
     // Create Kernel / initial stack;
     ThreadStack k_stack = create_thread_stack(KSTACK_SIZE);
+
+    ptm_virt_to_phys(&kernel_as, k_stack.base - KSTACK_SIZE);
+    ptm_virt_to_phys(&kernel_as, k_stack.base - KSTACK_SIZE + PAGE_SIZE);
+    ptm_virt_to_phys(&kernel_as, k_stack.base - KSTACK_SIZE + 2 * PAGE_SIZE);
+    ptm_virt_to_phys(&kernel_as, k_stack.base - KSTACK_SIZE + 3 * PAGE_SIZE);
+
     ASSERT(k_stack.size != 0);
 
-    UserInitStack* init_stack = (UserInitStack*) (k_stack.base - sizeof(UserInitStack));
+    volatile UserInitStack* init_stack = (UserInitStack*) (k_stack.base - sizeof(UserInitStack));
 
     init_stack->thread_init_common = thread_init_common;
     init_stack->thread_init_user = thread_init_user;

@@ -7,6 +7,7 @@
 #include "common/types.h"
 #include "fs/vfs.h"
 #include "fs/vnode.h"
+#include "lib/mem.h"
 #include "memory/heap.h"
 #include "common/util.h"
 #include "memory/vm.h"
@@ -19,15 +20,22 @@
 #define ELF64_ID3 'F'
 #define ELF64_ID_VALID(ID) ((ID)[0] == ELF64_ID0 && (ID)[1] == ELF64_ID1 && (ID)[2] == ELF64_ID2 && (ID)[3] == ELF64_ID3)
 
-#define ELF64_CLASS64 2
+#define ELF64_CLASS64     2
 #define ELF64_EM_X86_64   62  // AMD x86-64 architecture
-#define ELF64_DATA2_LSB   1         // Little-endian
-#define ELF64_VER_CURRENT  1   // Current version
-#define ELF64_PT_LOAD  1
+#define ELF64_DATA2_LSB   1   // Little-endian
+#define ELF64_VER_CURRENT 1   // Current version
 
 #define ELF64_PF_X 0x1
 #define ELF64_PF_W 0x2
 #define ELF64_PF_R 0x4
+
+#define ELF64_PT_PHDR 6
+
+#define ELF64_PT_NULL    0
+#define ELF64_PT_LOAD    1
+#define ELF64_PT_DYNAMIC 2
+#define ELF64_PT_INTERP  3
+#define ELF64_PT_NOTE    4
 
 typedef uint64_t elf64_addr_t;
 typedef uint64_t elf64_off_t;
@@ -65,7 +73,11 @@ typedef struct [[gnu::packed]] {
     elf64_xword_t align;
 } Elf64ProgHdr;
 
-[[maybe_unused]]static ElfResult elf_read([[maybe_unused]]VNode* elf_vnode,[[maybe_unused]] ElfFile** elf_file) {
+ElfResult elf_read(const char* path_to_elf, ElfFile** elf_file) {
+    VNode* elf_vnode;
+    if (vfs_lookup(nullptr, path_to_elf, &elf_vnode) < 0)
+        return ELF_RESULT_ERR_FS;
+
     Attributes file_attr;
 
     if (elf_vnode->ops->get_attr(elf_vnode, &file_attr) < 0)
@@ -94,64 +106,123 @@ typedef struct [[gnu::packed]] {
 
     *elf_file = kmalloc(sizeof(ElfFile));
     **elf_file = (ElfFile) {
+        .file = elf_vnode,
         .entry_point = elf_file_hdr.e_entry,
-        .phdrs_size = elf_file_hdr.e_phentsize,
-        .phdrs_offset = elf_file_hdr.e_phoff,
-        .phdrs_count = elf_file_hdr.e_phnum
-        };
+        .phdrs = {
+            .size = elf_file_hdr.e_phentsize,
+            .offset = elf_file_hdr.e_phoff,
+            .count = elf_file_hdr.e_phnum
+        }
+    };
 
     return ELF_RESULT_OK;
 }
 
-ElfResult elf_load(const char* path_to_elf, VmAddressSpace* as, uintptr_t* entry) {
-    ElfFile* elf_file;
-    ElfResult elf_res;
+static bool read_phdr(ElfFile* elf_file, size_t index, Elf64ProgHdr* phdr) {
+    ssize_t read_res = elf_file->file->ops->read(
+        elf_file->file,
+        phdr,
+        sizeof(Elf64ProgHdr),
+        elf_file->phdrs.offset + (index * elf_file->phdrs.size)
+    );
 
-    VNode* elf_vnode;
+    return (read_res > 0 || read_res == sizeof(Elf64ProgHdr));
+}
 
-    if (vfs_lookup(nullptr, path_to_elf, &elf_vnode) < 0)
-        return ELF_RESULT_ERR_FS;
-
-    if ((elf_res = elf_read(elf_vnode, &elf_file)) != ELF_RESULT_OK)
-        return elf_res;
-
-    for (size_t i = 0; i < elf_file->phdrs_count; i++) {
-        Elf64ProgHdr ph;
-        elf64_off_t off = elf_file->phdrs_offset + i * elf_file->phdrs_size;
-
-        size_t res;
-        if ((res = elf_vnode->ops->read(elf_vnode, &ph, sizeof(Elf64ProgHdr), off)) < 0 || res != sizeof(Elf64ProgHdr))
+ElfResult elf_lookup_interpreter(ElfFile* elf_file, char** interp_path) {
+    Elf64ProgHdr* phdr = kmalloc(sizeof(Elf64ProgHdr));
+    for (size_t i = 0; i < elf_file->phdrs.count; i++) {
+        if (!read_phdr(elf_file, i, phdr))
             return ELF_RESULT_ERR_FS;
 
-        if (ph.type != ELF64_PT_LOAD)
+        if (phdr->type != ELF64_PT_INTERP)
             continue;
 
-        uintptr_t seg_start   = ALIGN_DOWN(ph.vaddr, PAGE_SIZE);
-        uintptr_t seg_end     = ALIGN_UP(ph.paddr + ph.memsz, PAGE_SIZE);
-        size_t    seg_mem_sz  = seg_end - seg_start;
+        size_t interpreter_size = phdr->filesz + 1;
+        char* interp = kmalloc(interpreter_size);
+        memclear(interp, interpreter_size);
 
-        VmProtection prot = {
-            .read  = (ph.flags & ELF64_PF_R) != 0,
-            .write = (ph.flags & ELF64_PF_W) != 0,
-            .exec  = (ph.flags & ELF64_PF_X) != 0
-        };
+        ssize_t read_res = elf_file->file->ops->read(
+            elf_file->file,
+            interp,
+            phdr->filesz,
+            phdr->offset
+        );
 
-        ASSERT(vm_map_anon(as, (void*) seg_start, seg_mem_sz, prot, VM_CACHING_DEFAULT, VM_FLAG_FIXED | VM_FLAG_ZERO) != nullptr);
-
-        uint8_t *tmp = kmalloc(ph.filesz);
-
-        if ((res = elf_vnode->ops->read(elf_vnode, tmp, ph.filesz, ph.offset)) < 0 || res != ph.filesz) {
-            kfree(tmp);
+        if(read_res < 0 || read_res != (ssize_t) phdr->filesz) {
+            kfree(interp);
             return ELF_RESULT_ERR_FS;
         }
 
-        size_t copied = vm_copy_to(as, ph.vaddr, tmp, ph.filesz);
-        kfree(tmp);
+        *interp_path = interp;
+        return ELF_RESULT_OK;
 
-        if (copied != ph.filesz)
-            return ELF_RESULT_ERR_FS;
     }
 
-    *entry = elf_file->entry_point;
+    return ELF_RESULT_ERR_NOT_FOUND;
+}
+
+ElfResult elf_lookup_phdr_table(ElfFile* elf_file, uintptr_t* phdr_table) {
+    Elf64ProgHdr* phdr = kmalloc(sizeof(Elf64ProgHdr));
+    for (size_t i = 0; i < elf_file->phdrs.count; i++) {
+        if (!read_phdr(elf_file, i, phdr))
+            return ELF_RESULT_ERR_FS;
+
+        if (phdr->type != ELF64_PT_PHDR)
+            continue;
+
+        *phdr_table = phdr->vaddr;
+        return ELF_RESULT_OK;
+    }
+
+    return ELF_RESULT_ERR_NOT_FOUND;
+}
+
+ElfResult elf_load(ElfFile* elf_file, VmAddressSpace* as) {
+    Elf64ProgHdr* phdr = kmalloc(sizeof(Elf64ProgHdr));
+    for (size_t i = 0; i < elf_file->phdrs.count; i++) {
+        if (!read_phdr(elf_file, i, phdr))
+            return ELF_RESULT_ERR_FS;
+
+        switch (phdr->type) {
+            case ELF64_PT_LOAD:
+                uintptr_t aligned_vaddr = ALIGN_DOWN(phdr->vaddr, PAGE_SIZE);
+                size_t length = ALIGN_UP(phdr->memsz + (phdr->vaddr - aligned_vaddr), PAGE_SIZE);
+
+                VmProtection prot = {
+                    .read  = (phdr->flags & ELF64_PF_R) != 0,
+                    .write = (phdr->flags & ELF64_PF_W) != 0,
+                    .exec  = (phdr->flags & ELF64_PF_X) != 0
+                };
+
+                vm_map_anon(as, (void*) aligned_vaddr, length, prot, VM_CACHING_DEFAULT, VM_FLAG_FIXED | VM_FLAG_ZERO);
+
+                if (phdr->filesz <= 0)
+                    break;
+
+                size_t buf_size = ALIGN_UP(phdr->filesz, PAGE_SIZE);
+                void* buf = vm_map_anon(&kernel_as, nullptr, buf_size, VM_PROT_RW, VM_CACHING_DEFAULT, VM_FLAG_NONE);
+                ASSERT(buf != nullptr);
+
+                ssize_t read_res = elf_file->file->ops->read(elf_file->file, buf, phdr->filesz, phdr->offset);
+                if (read_res < 0 || read_res != (ssize_t) phdr->filesz) {
+                    vm_unmap(&kernel_as, buf, buf_size);
+                    return ELF_RESULT_ERR_FS;
+                }
+
+                size_t copied = vm_copy_to(as, phdr->vaddr, buf, phdr->filesz);
+                ASSERT(copied == phdr->filesz);
+
+                vm_unmap(&kernel_as, buf, buf_size);
+
+                break;
+
+            case ELF64_PT_NULL:   break;
+            case ELF64_PT_INTERP: break;
+            case ELF64_PT_PHDR:   break;
+            default: break; // log(LOG_WARN, "ELF", "Ignoring program header %#x", phdr->type);
+        }
+    }
+
     return ELF_RESULT_OK;
 }

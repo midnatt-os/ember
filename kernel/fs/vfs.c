@@ -3,6 +3,7 @@
 #include "abi/errno.h"
 #include "common/assert.h"
 #include "common/log.h"
+#include "common/panic.h"
 #include "common/types.h"
 #include "fs/vnode.h"
 #include "lib/container.h"
@@ -53,13 +54,15 @@ int vfs_mount(const char* path, const char* fs_type, MountOps* ops) {
     if (node != nullptr)
         vnode_ref(node);
 
-
     int res = mount->ops->mount(mount);
     if (res < 0) {
         if (node != nullptr) vnode_unref(node);
         kfree(mount);
         return res;
     }
+
+    if (node != nullptr)
+        node->covering_mount = mount;
 
     list_append(&mounts, &mount->mounts_node);
 
@@ -196,6 +199,11 @@ int vfs_lookup(VNode* start, const char* path, VNode** result) {
                 vnode_unref(current);
                 return err;
             }
+
+            if (next->covering_mount != nullptr) {
+                if ((err = next->covering_mount->ops->root(next->covering_mount, &next)) < 0)
+                    panic("fuck");
+            }
         }
 
         /* drop old ref, move to next */
@@ -209,7 +217,7 @@ int vfs_lookup(VNode* start, const char* path, VNode** result) {
 }
 
 int vfs_create_file(VNode* start, const char* parent_path, const char* name, VNode** new) {
-    logln(LOG_DEBUG, "VFS", "vfs_create_file(parent_path: %s, name: %s)", parent_path, name);
+    //logln(LOG_DEBUG, "VFS", "vfs_create_file(parent_path: %s, name: %s)", parent_path, name);
     VNode* parent;
     int err;
 
@@ -228,7 +236,7 @@ int vfs_create_file(VNode* start, const char* parent_path, const char* name, VNo
 }
 
 int vfs_create_dir(VNode* start, const char* parent_path, const char* name, VNode** new) {
-    logln(LOG_DEBUG, "VFS", "vfs_create_dir(parent_path: %s, name: %s)", parent_path, name);
+    //logln(LOG_DEBUG, "VFS", "vfs_create_dir(parent_path: %s, name: %s)", parent_path, name);
     VNode* parent;
     int err;
 

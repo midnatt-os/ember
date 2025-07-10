@@ -9,7 +9,7 @@
 #include <stdint.h>
 
 
-typedef struct {
+typedef struct Process {
     uint64_t pid;
     char name[32];
     VmAddressSpace* as;
@@ -17,6 +17,7 @@ typedef struct {
     FDTable fds;
     VNode* cwd;
 
+    struct Process* parent;
     List children;
     ListNode child_node;
 

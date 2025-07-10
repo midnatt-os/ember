@@ -7,6 +7,8 @@
 bool list_is_empty(List* list) { return list->count == 0; }
 
 void list_node_append(List* list, ListNode* position, ListNode* node) {
+    node->next = node->prev = nullptr;
+
     ASSERT(position != nullptr);
     ASSERT(node != nullptr);
 
@@ -26,6 +28,8 @@ void list_node_append(List* list, ListNode* position, ListNode* node) {
 }
 
 void list_node_prepend(List* list, ListNode* position, ListNode* node) {
+    node->next = node->prev = nullptr;
+
     ASSERT(position != nullptr);
     ASSERT(node != nullptr);
 
@@ -70,6 +74,7 @@ void list_prepend(List* list, ListNode* node) {
 
 void list_delete(List* list, ListNode* node) {
     ASSERT(node != nullptr);
+    ASSERT(list->count > 0);
 
     if (node == list->head)
         list->head = node->next;

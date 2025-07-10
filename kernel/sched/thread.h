@@ -41,7 +41,7 @@ typedef struct Thread {
     Process* proc;
     ThreadStatus status;
 
-    Event* event;
+    Event* sleep_event;
     ListNode proc_list_node;
     ListNode sched_list_node;
     ListNode wait_list_node;

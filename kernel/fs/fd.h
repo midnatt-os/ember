@@ -15,3 +15,5 @@ void fd_clone_table(FDTable* to_clone, FDTable* copy);
 int fd_alloc(FDTable* table, File* file);
 int fd_get(FDTable* table, int fd, File** file);
 int fd_close(FDTable* table, int fd);
+int fd_dup(FDTable* table, int fd);
+int fd_dup2(FDTable* table, int fd, int newfd);

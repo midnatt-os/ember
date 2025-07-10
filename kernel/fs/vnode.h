@@ -4,11 +4,13 @@
 #include "common/lock/mutex.h"
 #include "lib/ref_count.h"
 #include <stddef.h>
+#include <stdint.h>
 
 typedef enum {
     VNODE_TYPE_FILE,
     VNODE_TYPE_DIR,
-    VNODE_TYPE_SYMLINK
+    VNODE_TYPE_SYMLINK,
+    VNODE_TYPE_CHAR_DEV
 } VNodeType;
 
 typedef struct {
@@ -26,6 +28,7 @@ typedef struct {
     ssize_t (*read)(VNode* node, void* buf, size_t len, off_t off);
     ssize_t (*write)(VNode* node, const void* buf, size_t len, off_t off);
     int (*get_attr)(VNode* node, Attributes* attr);
+    int (*ioctl)(VNode* node, uint64_t request, void* argp);
 } VNodeOps;
 
 struct VNode {
@@ -33,6 +36,7 @@ struct VNode {
     bool is_root;
     VNodeOps* ops;
     Mount* mount;
+    Mount* covering_mount;
     void* data;
 
     ref_t ref_count;

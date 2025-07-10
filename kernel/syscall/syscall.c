@@ -19,6 +19,7 @@
 #include "fs/file.h"
 #include "fs/vfs.h"
 #include "fs/vnode.h"
+#include "lib/string.h"
 #include "memory/heap.h"
 #include "memory/hhdm.h"
 #include "memory/vm.h"
@@ -27,6 +28,7 @@
 #include "sched/thread.h"
 #include "abi/errno.h"
 #include "sys/framebuffer.h"
+#include "sys/time.h"
 
 #define MSR_EFER_SCE (1 << 0)
 
@@ -48,6 +50,7 @@ void* copy_buffer_from_user(void* src, size_t len) {
 
     VmAddressSpace* as = sched_get_current_process()->as;
     size_t bytes_read = vm_copy_from(buffer, as, (uintptr_t) src, len);
+
 
     if (bytes_read != len) {
         kfree(buffer);
@@ -226,7 +229,7 @@ SyscallResult syscall_open(char* path, [[maybe_unused]]size_t path_length, int f
     } else {
         if ((flags & (O_CREAT|O_EXCL)) == (O_CREAT|O_EXCL)) {
             vnode_unref(node);
-            return (SyscallResult) { .error = -EEXIST };
+            return SYS_RES(0, -EEXIST);
         }
 
         /*
@@ -350,6 +353,52 @@ SyscallResult syscall_seek(int fd, off_t offset, int whence) {
     return SYS_RES((uint64_t) new_off, 0);
 }
 
+SyscallResult syscall_mkdir(const char* path, size_t path_len, [[maybe_unused]] uint64_t mode) {
+    ASSERT((path = copy_string_from_user((char*) path, path_len)) != nullptr);
+
+    logln(LOG_DEBUG, "SYSCALL", "mkdir(path: %s, mode: %o)", path, mode);
+
+    char parent[128];
+    char name[128];
+    ASSERT(vfs_split_path(path, parent, sizeof(parent), name, sizeof(name)) == 0);
+
+    VNode* n;
+    int res = vfs_create_dir(nullptr, parent, name, &n);
+    if (res < 0)
+        return SYS_RES(0, res);
+
+    return SYS_RES(res, 0);
+}
+
+SyscallResult syscall_dup(int fd) {
+    logln(LOG_DEBUG, "SYSCALL", "dup(fd: %d)", fd);
+
+    Process* proc = sched_get_current_process();
+
+    int res = fd_dup(&proc->fds, fd);
+
+    if (res < 0)
+        return SYS_RES(0, res);
+
+    return SYS_RES(res, 0);
+}
+
+SyscallResult syscall_dup2(int fd, int newfd) {
+    logln(LOG_DEBUG, "SYSCALL", "dup2(fd: %d, newfd: %d)", fd, newfd);
+
+    if (fd == newfd)
+        return SYS_RES(fd, 0);
+
+    Process* proc = sched_get_current_process();
+
+    int res = fd_dup2(&proc->fds, fd, newfd);
+
+    if (res < 0)
+        return SYS_RES(0, res);
+
+    return SYS_RES(res, 0);
+}
+
 SyscallResult syscall_fetch_framebuffer(SysFramebuffer* user_fb) {
     logln(LOG_DEBUG, "SYSCALL", "fetch_framebuffer()");
 
@@ -372,7 +421,7 @@ SyscallResult syscall_fork() {
     logln(LOG_DEBUG, "SYSCALL", "syscall_fork() (pid: %lu, tid: %lu)", current_thread->proc->pid, current_thread->tid);
 
     [[maybe_unused]] SyscallSavedRegs* regs = (SyscallSavedRegs*) (current_thread->kernel_stack.base - sizeof(SyscallSavedRegs));
-
+    return SYS_RES(0, 0);
     Process* child_proc = process_fork(sched_get_current_process(), regs);
 
     return SYS_RES(child_proc->pid, 0);
@@ -389,29 +438,268 @@ SyscallResult syscall_execve(const char *path, size_t path_len, char *const argv
     if (!k_argv) {
         free_string_array(k_argv);
         return SYS_RES(0, -EFAULT);
-    }
+        }
 
     char** k_envp = copy_string_array_from_user(envp, envp_len);
     if (!k_envp) {
         free_string_array(k_argv);
         return SYS_RES(0, -EFAULT);
-    }
+        }
 
     t->proc->as = vm_create_address_space();
 
-    uintptr_t entry_addr;
-    ElfResult elf_res = elf_load(path, t->proc->as, &entry_addr);
-    if (elf_res != ELF_RESULT_OK) {
-        log_raw("elf fuck: %d", elf_res);
+
+    ElfFile* elf;
+    ASSERT(elf_read(path, &elf) == ELF_RESULT_OK);
+    ASSERT(elf_load(elf, t->proc->as) == ELF_RESULT_OK);
+
+    uintptr_t entry;
+    char* interp_path;
+    switch (elf_lookup_interpreter(elf, &interp_path)) {
+        case ELF_RESULT_OK:
+            ElfFile* interp_elf;
+            ASSERT(elf_read(interp_path, &interp_elf) == ELF_RESULT_OK);
+            ASSERT(elf_load(interp_elf, t->proc->as) == ELF_RESULT_OK);
+            entry = interp_elf->entry_point;
+            break;
+
+        case ELF_RESULT_ERR_NOT_FOUND: entry = elf->entry_point; break;
+
+        default: panic("Elf interpreter lookup on execve failed.");
     }
 
-    Auxv auxv = { .entry = entry_addr };
-    uintptr_t user_stack = sysv_setup_stack(t->proc->as, 4096 * 4, k_argv, k_envp, &auxv);
+    Auxv auxv = { .entry = elf->entry_point };
 
-    Thread* new_t = thread_create_user(t->proc, path, entry_addr, user_stack);
+    uintptr_t phdr_table;
+    if (elf_lookup_phdr_table(elf, &phdr_table) == ELF_RESULT_OK) {
+        auxv.phdr = phdr_table;
+        auxv.phnum = elf->phdrs.count;
+        auxv.phent = elf->phdrs.size;
+    }
+
+    kfree(elf);
+
+    #define U_STACK_SIZE 4096 * 8
+    uintptr_t user_stack = sysv_setup_stack(t->proc->as, U_STACK_SIZE, k_argv, k_envp, &auxv);
+
+    Thread* new_t = thread_create_user(t->proc, path, entry, user_stack);
     sched_schedule_thread(new_t);
 
     sched_yield(STATUS_DONE);
     ASSERT_UNREACHABLE();
+
+    return SYS_RES(0, 0);
+}
+
+#define PROT_READ  0x1
+#define PROT_WRITE 0x2
+#define PROT_EXEC  0x4
+
+static inline VmProtection prot_from_posix(int prot) {
+    return (VmProtection) {
+        .read  = (prot & PROT_READ)  != 0,
+        .write = (prot & PROT_WRITE) != 0,
+        .exec  = (prot & PROT_EXEC)  != 0
+    };
+}
+
+#define MAP_FIXED     0x10
+#define MAP_ANONYMOUS 0x20
+
+static inline int vm_flags_from_posix(int flags) {
+    int vm_flags = VM_FLAG_NONE;
+
+    if (flags & MAP_FIXED)
+        vm_flags |= VM_FLAG_FIXED;
+
+    if (flags & MAP_ANONYMOUS)
+        vm_flags |= VM_FLAG_ZERO;
+
+    return vm_flags;
+}
+
+SyscallResult syscall_mmap(void* hint, size_t length, int prot, int flags, int fd, off_t offset) {
+    Process* proc = sched_get_current_process();
+
+    logln(LOG_DEBUG, "SYSCALL", "syscall_mmap(hint: %#p, length: %#lx, prot: %d, flags: %d, fd: %d, offset: %lu)",
+        hint,
+        length,
+        prot,
+        flags,
+        fd,
+        offset
+    );
+
+    ASSERT(fd == -1);
+    ASSERT(offset == 0);
+
+    #define MAP_ANON 0x20
+    if (flags & MAP_ANON) {
+        void* map_addr = vm_map_anon(proc->as, hint, length, prot_from_posix(prot), VM_CACHING_DEFAULT, vm_flags_from_posix(flags));
+        if (map_addr == nullptr)
+            return SYS_RES(0, -ENOMEM);
+
+        return SYS_RES((uint64_t) map_addr, 0);
+    } else {
+        ASSERT_UNREACHABLE();
+    }
+
+
+    return SYS_RES(0, 0);
+}
+
+SyscallResult syscall_mprotect(void* pointer, size_t length, int prot_flags) {
+    if (((uintptr_t) pointer % PAGE_SIZE) || (length % PAGE_SIZE))
+        return SYS_RES(0, -EINVAL);
+
+    VmProtection prot = {
+        .read  = !!(prot_flags & PROT_READ),
+        .write = !!(prot_flags & PROT_WRITE),
+        .exec  = !!(prot_flags & PROT_EXEC),
+    };
+
+    logln(LOG_DEBUG, "SYSCALL", "syscall_mprotect(pointer: %#p, length: %#lx, prot: %c%c%c)", pointer, length, prot.read ? 'R' : '-', prot.write ? 'W' : '-', prot.exec ? 'X' : '-');
+
+    int ret = vm_mprotect(sched_get_current_process()->as, pointer, length, prot);
+
+    if (ret < 0)
+        return SYS_RES(0, ret);
+
+    return SYS_RES(ret, 0);
+}
+
+SyscallResult syscall_gettime(int clock, TimeSpec* ts) {
+    TimeSpec k_ts = { .tv_sec = 0, .tv_nsec = 0 };
+
+    switch (clock) {
+        case CLOCK_REALTIME:
+            copy_buffer_to_user(ts, &k_ts, sizeof(TimeSpec));
+            return SYS_RES(0, 0);
+
+        case CLOCK_MONOTONIC:
+            ns_to_timespec(time_current(), &k_ts);
+            copy_buffer_to_user(ts, &k_ts, sizeof(TimeSpec));
+
+            return SYS_RES(0, 0);
+
+        default:
+            logln(LOG_WARN, "SYSCALL", "gettime: unhandled clock type: %d", clock);
+            ASSERT_UNREACHABLE();
+    }
+}
+
+SyscallResult syscall_nsleep(uint64_t ns) {
+    logln(LOG_DEBUG, "SYSCALL", "syscall_nsleep(ns: %lu)", ns);
+    sched_sleep(ns);
+    return SYS_RES(0, 0);
+}
+
+SyscallResult syscall_getpid() {
+    logln(LOG_DEBUG, "SYSCALL", "syscall_getpid()");
+    Process* proc = sched_get_current_process();
+    return SYS_RES(proc->pid, 0);
+}
+
+SyscallResult syscall_getppid() {
+    logln(LOG_DEBUG, "SYSCALL", "syscall_getppid()");
+    Process* proc = sched_get_current_process();
+    return SYS_RES(proc->parent == nullptr ? 0 : proc->parent->pid, 0);
+}
+
+char* root = "/";
+
+SyscallResult syscall_getcwd(char* buffer, [[maybe_unused]] size_t size) {
+    logln(LOG_DEBUG, "SYSCALL", "syscall_getcwd()");
+    copy_buffer_to_user(buffer, root, 2);
+    return SYS_RES(0, 0);
+}
+
+SyscallResult syscall_isatty(int fd) {
+    logln(LOG_DEBUG, "SYSCALL", "syscall_isatty(fd: %d)", fd);
+    Process* proc = sched_get_current_process();
+
+    File* f;
+    if (fd_get(&proc->fds, fd, &f) != 0)
+        return SYS_RES(0, -EBADF);
+
+    if (f->is_tty)
+        return SYS_RES(0, 0);
+
+
+    return SYS_RES(0, -ENOTTY);
+}
+
+SyscallResult syscall_ioctl(int fd, uint64_t request, [[maybe_unused]] void* argp) {
+    logln(LOG_DEBUG, "SYSCALL", "ioctl(fd: %d, request: %#lx)", fd, request);
+    Process* proc = sched_get_current_process();
+
+    File* f;
+    if (fd_get(&proc->fds, fd, &f) != 0)
+        return SYS_RES(0, -EBADF);
+
+    int res = file_ioctl(f, request, argp);
+    if (res < 0)
+        return SYS_RES(0, res);
+
+    return SYS_RES(res, 0);
+}
+
+SyscallResult syscall_fcntl(int fd, int request, uintptr_t arg) {
+    logln(LOG_DEBUG, "SYSCALL", "fcntl(fd: %d, request: %lu, arg: %#p)", fd, request, arg);
+
+    return SYS_RES(0, 0);
+}
+
+struct stat {
+	uint64_t st_dev;
+	uint64_t st_ino;
+	uint64_t st_nlink;
+	uint32_t st_mode;
+	uint64_t st_uid;
+	uint64_t st_gid;
+	unsigned int __pad0;
+	uint64_t st_rdev;
+	off_t st_size;
+	uint64_t st_blksize;
+	uint64_t st_blocks;
+	TimeSpec st_atim;
+	TimeSpec st_mtim;
+	TimeSpec st_ctim;
+	long __unused[3];
+};
+
+SyscallResult syscall_stat(int fd, struct stat* statbuf) {
+    logln(LOG_DEBUG, "SYSCALL", "stat(fd: %d)", fd);
+    Process* proc = sched_get_current_process();
+
+    File* f;
+    if (fd_get(&proc->fds, fd, &f) != 0)
+        return SYS_RES(0, -EBADF);
+
+    Attributes attr;
+    int res = file_stat(f, &attr);
+    if (res < 0)
+        return SYS_RES(0, res);
+
+    struct stat s = (struct stat) {
+        .st_dev     = 0,              // device ID (fake/default)
+        .st_ino     = 0,              // inode number (if no real FS)
+        .st_nlink   = 1,              // default link count
+        .st_mode    = 0,              // file type + permissions
+        .st_uid     = 0,              // root
+        .st_gid     = 0,              // root group
+        .__pad0     = 0,
+        .st_rdev    = 0,              // device ID (for char/block devs)
+        .st_size    = attr.size,     // actual file size
+        .st_blksize = 4096,           // common default block size
+        .st_blocks  = (attr.size + 511) / 512, // count in 512-byte blocks
+        .st_atim    = {0, 0},         // access time — stub
+        .st_mtim    = {0, 0},         // modify time — stub
+        .st_ctim    = {0, 0},         // change time — stub
+        .__unused   = {0, 0, 0}
+    };
+
+    copy_buffer_to_user(statbuf, &s, sizeof(struct stat));
+
     return SYS_RES(0, 0);
 }

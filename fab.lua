@@ -10,7 +10,7 @@ local c_flags = {
     "-Wall",
     "-Wextra",
     "-Werror",
-    "-Wimplicit-fallthrough",
+    "-Wno-implicit-fallthrough",
 
     "-fno-stack-protector",
     "-fno-stack-check",
@@ -29,7 +29,6 @@ local c_flags = {
     "-mgeneral-regs-only",
     "-mabi=sysv",
 
-    --"-DUACPI_BAREBONES_MODE",
     "-DUACPI_FORMATTED_LOGGING",
 }
 
@@ -78,6 +77,12 @@ local nanoprintf = fab.dependency(
     "main"
 )
 
+local flanterm = fab.dependency(
+    "flanterm",
+    "https://codeberg.org/mintsuki/flanterm.git",
+    "trunk"
+)
+
 local uacpi = fab.dependency(
     "uacpi",
     "https://github.com/uACPI/uACPI.git",
@@ -85,12 +90,17 @@ local uacpi = fab.dependency(
 )
 
 table.extend(kernel_sources, sources(path(cc_runtime.path, "cc-runtime.c")))
+table.extend(kernel_sources, sources(flanterm:glob("**/*.c")))
 table.extend(kernel_sources, sources(uacpi:glob("source/*.c")))
+
+--table.insert(c_flags, "-I" .. path(flanterm.path, "src"))
+
 
 table.extend(include_dirs, {
     builtins.c.include_dir(path(freestnd_c_hdrs.path, "x86_64/include")),
     builtins.c.include_dir(limine.path),
     builtins.c.include_dir(nanoprintf.path),
+    builtins.c.include_dir(path(flanterm.path, "src")),
     builtins.c.include_dir(path(uacpi.path, "include")),
 })
 

@@ -82,13 +82,11 @@ void populate_tmpfs_from_initrd([[maybe_unused]]Module* initrd_module) {
 
         if (type == '5') {
             VNode* new_node;
-
             ASSERT(vfs_create_dir(nullptr, parent, name, &new_node) == 0);
             vnode_unref(new_node);
         } else {
             void* data = (void*) cursor + BLOCK_SIZE;
             VNode* new_node;
-
             ASSERT(vfs_create_file(nullptr, parent, name, &new_node) == 0);
             ASSERT(vfs_write(nullptr, filename, data, file_size, 0) == (ssize_t) file_size);
         }

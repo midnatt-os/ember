@@ -14,10 +14,13 @@
 #include "memory/ptm.h"
 #include "memory/heap.h"
 #include "sched/sched.h"
+#include "abi/errno.h"
+
 #include <stddef.h>
 #include <stdint.h>
 
 #define MIN(A, B) (A < B ? A : B)
+#define MAX(A, B) (A > B ? A : B)
 #define REGION_INTERSECTS(BASE1, LENGTH1, BASE2, LENGTH2) ((BASE1) < ((BASE2) + (LENGTH2)) && (BASE2) < ((BASE1) + (LENGTH1)))
 
 typedef uint8_t LinkerSymbol[];
@@ -49,11 +52,12 @@ static void region_insert(VmAddressSpace* as, VmRegion* region) {
     list_append(&as->regions, &region->list_node);
 }
 
-static uintptr_t find_space(VmAddressSpace* as, uintptr_t hint, size_t length, bool fixed) {
+static bool find_space(VmAddressSpace* as, uintptr_t hint, size_t length, bool fixed, uintptr_t* addr) {
     uintptr_t as_start = as == &kernel_as ? KERNELSPACE_START : USERSPACE_START;
     uintptr_t as_end = as == &kernel_as ? KERNELSPACE_END : USERSPACE_END;
 
-    if (hint) {
+    if (hint || fixed) {
+        bool found = true;
         LIST_FOREACH(as->regions, node) {
             VmRegion* r = REGION_OF(node);
 
@@ -61,14 +65,17 @@ static uintptr_t find_space(VmAddressSpace* as, uintptr_t hint, size_t length, b
                 continue;
 
             if (fixed)
-                return 0;
+                return false;
 
             hint = 0;
+            found = false;
             break;
         }
 
-        if (hint != 0)
-            return hint;
+        if (found) {
+            *addr = hint;
+            return true;
+        }
     }
 
     uintptr_t candidate = as_start;
@@ -81,14 +88,18 @@ static uintptr_t find_space(VmAddressSpace* as, uintptr_t hint, size_t length, b
             continue;
         }
 
-        if (candidate + length <= r->base)
-            return candidate;
+        if (candidate + length <= r->base) {
+            *addr = candidate;
+            return true;
+        }
     }
 
-    if (candidate + length <= as_end)
-        return candidate;
+    if (candidate + length <= as_end) {
+        *addr = candidate;
+        return true;
+    }
 
-    return 0;
+    return false;
 }
 
 static VmRegion* region_pool_alloc() {
@@ -140,11 +151,15 @@ static void* map_common(VmAddressSpace* as, void* hint, size_t length, paddr_t p
 
     spinlock_acquire(&as->regions_lock);
 
-    address = find_space(as, address, length, (flags & VM_FLAG_FIXED) != 0);
-    if (!address || ((flags & VM_FLAG_FIXED) && address != (uintptr_t)hint)) {
+    if (!find_space(as, address, length, (flags & VM_FLAG_FIXED) != 0, &address)) {
         spinlock_release(&as->regions_lock);
         return nullptr;
     }
+
+    /*if (address == 0 || ((flags & VM_FLAG_FIXED) && address != (uintptr_t) hint)) {
+        spinlock_release(&as->regions_lock);
+        return nullptr;
+        }*/
 
     VmRegion* region = region_pool_alloc();
 
@@ -271,6 +286,110 @@ void vm_unmap(VmAddressSpace* as, void* address, size_t length) {
     }
 
     spinlock_release(&as->regions_lock);
+}
+
+#define ADDR_MASK ((uint64_t) 0x000F'FFFF'FFFF'F000)
+static void update_page_prot(VmAddressSpace* as, uintptr_t base, size_t length, VmProtection prot, VmCaching caching, VmPrivilege priv) {
+    for (size_t off = 0; off < length; off += PAGE_SIZE) {
+        uintptr_t vaddr = base + off;
+        uintptr_t pa   = ptm_virt_to_phys(as, vaddr);
+        if (!pa) continue;  // unmapped? skip
+        // strip page-offset to get frame base
+        paddr_t frame = (paddr_t)(pa & ADDR_MASK);
+        // re-install same mapping but with new prot bits
+        ptm_map(as, vaddr, frame, prot, caching, priv);
+    }
+}
+
+int vm_mprotect(VmAddressSpace* as, void* addr_, size_t length_, VmProtection new_prot) {
+    logln(LOG_DEBUG, "VM", "map_mprotect(addr: %#lx, length: %#lx, prot: %c%c%c)",
+        addr_, length_, new_prot.read ? 'R' : '-', new_prot.write ? 'W' : '-', new_prot.exec ? 'X' : '-');
+
+    uintptr_t addr   = (uintptr_t)addr_;
+    uintptr_t end    = addr + length_;
+    if (addr % PAGE_SIZE || length_ % PAGE_SIZE)
+        return -EINVAL;
+    if (as != &kernel_as) {
+        if (addr < USERSPACE_START ||
+            end > USERSPACE_END)
+            return -EINVAL;
+    }
+
+    spinlock_acquire(&as->regions_lock);
+
+    ListNode* node = as->regions.head;
+    while (node) {
+        VmRegion* r = REGION_OF(node);
+        uintptr_t r0 = r->base;
+        uintptr_t r1 = r0 + r->length;
+
+        // no overlap?
+        if (r1 <= addr || r0 >= end) {
+            node = node->next;
+            continue;
+        }
+
+        // compute overlap
+        uintptr_t ov0 = MAX(r0, addr);
+        uintptr_t ov1 = MIN(r1, end);
+        size_t    ovl = ov1 - ov0;
+
+        // compute left/right sizes
+        size_t left  = ov0 - r0;
+        size_t right = r1 - ov1;
+
+        // unlink this region
+        ListNode* next = node->next;
+        list_delete(&as->regions, node);
+
+        // LEFT piece (unchanged)
+        if (left) {
+            r->length = left;
+            region_insert(as, r);
+        } else {
+            region_pool_free(r);
+        }
+
+        // MIDDLE piece (new prot)
+        {
+            VmRegion* mid = region_pool_alloc();
+            *mid = (VmRegion){
+                .as      = as,
+                .base    = ov0,
+                .length  = ovl,
+                .prot    = new_prot,
+                .caching = r->caching,
+                .priv    = r->priv,
+                .type    = r->type,
+                .metadata= r->metadata
+            };
+            region_insert(as, mid);
+            // patch page‐tables in place
+            update_page_prot(as, mid->base, mid->length,
+                             mid->prot, mid->caching, mid->priv);
+        }
+
+        // RIGHT piece (unchanged)
+        if (right) {
+            VmRegion* right_r = region_pool_alloc();
+            *right_r = (VmRegion){
+                .as      = as,
+                .base    = ov1,
+                .length  = right,
+                .prot    = r->prot,
+                .caching = r->caching,
+                .priv    = r->priv,
+                .type    = r->type,
+                .metadata= r->metadata
+            };
+            region_insert(as, right_r);
+        }
+
+        node = next;
+    }
+
+    spinlock_release(&as->regions_lock);
+    return 0;
 }
 
 size_t vm_copy_to(VmAddressSpace* dest_as, uintptr_t dest_vaddr, void* src, size_t length) {

@@ -2,6 +2,7 @@
 #include "common/assert.h"
 #include "common/lock/mutex.h"
 #include "fs/fd.h"
+#include "fs/vfs.h"
 #include "fs/vnode.h"
 #include "lib/list.h"
 #include "memory/vm.h"
@@ -24,6 +25,8 @@ Process* process_create(const char* name, VmAddressSpace* as) {
         .threads = LIST_NEW,
         .lock = MUTEX_NEW
     };
+
+    vfs_root(&proc->cwd);
 
     ASSERT(vfs_root(&proc->cwd) >= 0);
 
@@ -61,6 +64,7 @@ Process* process_fork(Process* proc_to_fork, SyscallSavedRegs* regs) {
     Thread* t = thread_clone(new, sched_get_current_thread(), regs);
 
     list_append(&proc_to_fork->children, &new->child_node);
+    new->parent = proc_to_fork;
 
     sched_schedule_thread(t);
 
