@@ -1,4 +1,5 @@
-local kernel_sources = sources(fab.glob("kernel/**/*.{c,asm}"))
+local opt_logging = fab.option("logging", { "serial", "fb", "all" }) or "serial"
+local kernel_sources = sources(fab.glob("kernel/**/*.{c,asm}", "modules/**"))
 
 local include_dirs = { builtins.c.include_dir("kernel") }
 
@@ -16,7 +17,7 @@ local c_flags = {
     "-fno-stack-check",
     "-fno-strict-aliasing",
 
-    "-fsanitize=undefined",
+    --"-fsanitize=undefined",
 
     "-O0",
     "-g",
@@ -30,7 +31,18 @@ local c_flags = {
     "-mabi=sysv",
 
     "-DUACPI_FORMATTED_LOGGING",
+    "-DUACPI_SIZED_FREES",
+    "-DLIMINE_API_REVISION=4",
 }
+
+if opt_logging == "fb" then
+    table.insert(c_flags, "-DLOGGING_FB")
+elseif opt_logging == "serial" then
+    table.insert(c_flags, "-DLOGGING_SERIAL")
+elseif opt_logging == "all" then
+    table.insert(c_flags, "-DLOGGING_FB")
+    table.insert(c_flags, "-DLOGGING_SERIAL")
+end
 
 local linker_flags = {
     "-static",
@@ -67,8 +79,8 @@ local freestnd_c_hdrs = fab.dependency(
 
 local limine = fab.dependency(
     "limine",
-    "https://github.com/limine-bootloader/limine.git",
-    "v9.x"
+    "https://codeberg.org/Limine/Limine.git",
+    "v10.2.1-binary"
 )
 
 local nanoprintf = fab.dependency(
@@ -93,9 +105,6 @@ table.extend(kernel_sources, sources(path(cc_runtime.path, "cc-runtime.c")))
 table.extend(kernel_sources, sources(flanterm:glob("**/*.c")))
 table.extend(kernel_sources, sources(uacpi:glob("source/*.c")))
 
---table.insert(c_flags, "-I" .. path(flanterm.path, "src"))
-
-
 table.extend(include_dirs, {
     builtins.c.include_dir(path(freestnd_c_hdrs.path, "x86_64/include")),
     builtins.c.include_dir(limine.path),
@@ -103,6 +112,12 @@ table.extend(include_dirs, {
     builtins.c.include_dir(path(flanterm.path, "src")),
     builtins.c.include_dir(path(uacpi.path, "include")),
 })
+
+-- Modules
+local modules = {}
+for _, src in ipairs(sources(fab.glob("modules/**"))) do
+    modules[src.name:sub(0, -3)] = src
+end
 
 local objs = builtins.generate(
     kernel_sources,
@@ -116,5 +131,16 @@ local objs = builtins.generate(
     }
 )
 
-local kernel = linker:link("ember.elf", objs, linker_flags)
-kernel:install("bin/ember.elf")
+local kernel = linker:link("ember", objs, linker_flags)
+kernel:install("bin/ember")
+
+-- Build Modules
+local cflags_module = { "-ffreestanding", "-fPIC", "-fno-plt", "-mno-red-zone", "-mgeneral-regs-only",
+    "-fno-stack-protector", "-fno-stack-check", "-fno-strict-aliasing", "-fno-lto", "-g", "-std=gnu23", "-nostdinc",
+    "-fno-omit-frame-pointer" }
+
+for name, source in pairs(modules) do
+    local obj = cc:compile_object(name .. ".o", source, include_dirs, cflags_module)
+    linker:link(name, { obj }, { "-shared", "-nostdlib", "-z,now", "-z,relro", "-z,nocopyreloc" })
+        :install("modules/" .. name .. ".mod")
+end

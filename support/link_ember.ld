@@ -1,6 +1,6 @@
 OUTPUT_FORMAT(elf64-x86-64)
 
-ENTRY(kentry)
+ENTRY(init)
 
 PHDRS
 {
@@ -16,12 +16,14 @@ SECTIONS
     . = 0xffffffff80000000;
 
     .limine_requests : {
+        __LIMINE_REQ_START = .;
         KEEP(*(.limine_requests_start))
         KEEP(*(.limine_requests))
         KEEP(*(.limine_requests_end))
+        . = ALIGN(0x1000);
+        __LIMINE_REQ_END = .;
     } :limine_requests
 
-    . = ALIGN(0x1000);
     .text : {
         __TEXT_START = .;
         *(.text .text.*)
@@ -59,4 +61,3 @@ SECTIONS
         *(.note .note.*)
     }
 }
-

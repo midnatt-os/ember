@@ -1,0 +1,96 @@
+#include "cpu/interrupts.h"
+
+#include "common/asm.h"
+#include "common/lock/spinlock.h"
+#include "common/log.h"
+#include "common/panic.h"
+#include "cpu/gdt.h"
+
+#include <stddef.h>
+#include <stdint.h>
+
+#define IDT_SIZE 256
+#define EXCEPTIONS_END_OFFSET 31
+
+typedef struct [[gnu::packed]] {
+    uint16_t limit;
+    uint64_t base;
+} idtr_t;
+
+typedef struct [[gnu::packed]] {
+    uint16_t low_offset;
+    uint16_t segment_selector;
+    uint8_t ist;
+    uint8_t flags;
+    uint16_t middle_offset;
+    uint32_t high_offset;
+    uint32_t rsv0;
+} idt_entry_t;
+
+static idt_entry_t idt_entries[IDT_SIZE];
+extern uint64_t isr_stubs[IDT_SIZE];
+
+static spinlock_t handler_lock = SPINLOCK_NEW;
+static interrupt_handler_t int_handlers[IDT_SIZE];
+
+void common_int_handler(interrupt_frame_t* frame) {
+    bool prev = spinlock_lock(&handler_lock);
+    interrupt_handler_t handler = int_handlers[frame->vector];
+    spinlock_unlock(&handler_lock, prev);
+
+    if (handler == nullptr)
+        panic("interrupt raised but no handler present (vector: %lu)", frame->vector); // logln(LOG_WARN, "INT", "interrupt raised but no handler present (vector: %lu)", frame->vector);
+    else
+        handler(frame);
+}
+
+void interrupts_set_handler(uint8_t vec, interrupt_handler_t handler) {
+    bool prev = spinlock_lock(&handler_lock);
+    int_handlers[vec] = handler;
+    spinlock_unlock(&handler_lock, prev);
+}
+
+int16_t interrupts_request_vector(interrupt_handler_t handler) {
+    bool prev = spinlock_lock(&handler_lock);
+
+    for (size_t i = EXCEPTIONS_END_OFFSET; i < IDT_SIZE; i++) {
+        if (int_handlers[i] != nullptr)
+            continue;
+
+        int_handlers[i] = handler;
+        spinlock_unlock(&handler_lock, prev);
+        return i;
+    }
+
+    spinlock_unlock(&handler_lock, prev);
+    return -1;
+}
+
+void interrupts_load_idt() {
+    idtr_t idtr = { .base = (uint64_t) &idt_entries, .limit = sizeof(idt_entries) - 1 };
+    asm volatile("lidt %0" : : "m"(idtr));
+}
+
+void pf_handler([[maybe_unused]] interrupt_frame_t* ctx) {
+    panic("-- PAGE FAULT --\nCR2=%#p", cr2_read());
+}
+
+void interrupts_init() {
+    for (size_t i = 0; i < IDT_SIZE; i++) {
+        idt_entries[i] = (idt_entry_t) {
+            .low_offset = (uint16_t) isr_stubs[i],
+            .middle_offset = (uint16_t) (isr_stubs[i] >> 16),
+            .high_offset = (uint32_t) (isr_stubs[i] >> 32),
+            .segment_selector = GDT_SEL_CODE_CPL0,
+            .flags = 0x8E,
+            .ist = 0,
+            .rsv0 = 0,
+        };
+    }
+
+    interrupts_load_idt();
+
+    int_handlers[0xE] = pf_handler;
+
+    int_unmask();
+}
