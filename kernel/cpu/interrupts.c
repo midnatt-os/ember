@@ -4,7 +4,10 @@
 #include "common/lock/spinlock.h"
 #include "common/log.h"
 #include "common/panic.h"
+#include "cpu/cpu.h"
 #include "cpu/gdt.h"
+#include "sched/thread.h"
+#include "stdatomic.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -39,9 +42,14 @@ void common_int_handler(interrupt_frame_t* frame) {
     spinlock_unlock(&handler_lock, prev);
 
     if (handler == nullptr)
-        panic("interrupt raised but no handler present (vector: %lu)", frame->vector); // logln(LOG_WARN, "INT", "interrupt raised but no handler present (vector: %lu)", frame->vector);
+        logln(LOG_WARN, "INT", "interrupt raised but no handler present (vector: %lu)", frame->vector); // panic("interrupt raised but no handler present (vector: %lu)", frame->vector);
     else
         handler(frame);
+
+    if (CPU_CURRENT->scheduler.need_resched) {
+        CPU_CURRENT->scheduler.need_resched = false;
+        sched_yield(STATUS_READY);
+    }
 }
 
 void interrupts_set_handler(uint8_t vec, interrupt_handler_t handler) {
@@ -71,8 +79,43 @@ void interrupts_load_idt() {
     asm volatile("lidt %0" : : "m"(idtr));
 }
 
-void pf_handler([[maybe_unused]] interrupt_frame_t* ctx) {
-    panic("-- PAGE FAULT --\nCR2=%#p", cr2_read());
+void ss_handler(interrupt_frame_t* frame) {
+    panic("-- STACK-SEGMENT FAULT --\nRIP=%#p\nRIP=%#p", frame->rip, frame->rsp);
+}
+
+void gpf_handler(interrupt_frame_t* frame) {
+    panic("-- GENERAL PROTECTION FAULT --\nRIP=%#p", frame->rip);
+}
+
+static inline char flag(uint64_t err, uint64_t bit, char c) {
+    return (err & bit) ? c : '-';
+}
+
+void pf_handler(interrupt_frame_t* frame) {
+    uint64_t err = frame->err_code;
+    char flags[9] = {
+        flag(err, 1u << 0, 'P'),
+        flag(err, 1u << 1, 'W'),
+        flag(err, 1u << 2, 'U'),
+        flag(err, 1u << 3, 'R'),
+        flag(err, 1u << 4, 'I'),
+        flag(err, 1u << 5, 'K'), // PK
+        flag(err, 1u << 6, 'S'), // SS
+        flag(err, 1u << 7, 'X'), // SGX
+        '\0',
+    };
+
+    panic("-- PAGE FAULT --\nCR2=%#p ERR=%#lx [%s]", cr2_read(), err, flags);
+}
+
+extern uint64_t panic_ack_count;
+
+void panic_ipi_handler(interrupt_frame_t* _) {
+    atomic_fetch_add_explicit(&panic_ack_count, 1, memory_order_release);
+
+    int_mask();
+    while (true)
+        halt();
 }
 
 void interrupts_init() {
@@ -90,6 +133,9 @@ void interrupts_init() {
 
     interrupts_load_idt();
 
+    int_handlers[0x2] = panic_ipi_handler;
+    int_handlers[0xC] = ss_handler;
+    int_handlers[0xD] = gpf_handler;
     int_handlers[0xE] = pf_handler;
 
     int_unmask();

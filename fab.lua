@@ -135,9 +135,22 @@ local kernel = linker:link("ember", objs, linker_flags)
 kernel:install("bin/ember")
 
 -- Build Modules
-local cflags_module = { "-ffreestanding", "-fPIC", "-fno-plt", "-mno-red-zone", "-mgeneral-regs-only",
-    "-fno-stack-protector", "-fno-stack-check", "-fno-strict-aliasing", "-fno-lto", "-g", "-std=gnu23", "-nostdinc",
-    "-fno-omit-frame-pointer" }
+local cflags_module = {
+    "-ffreestanding",
+    "-fPIC",
+    "-fno-plt",
+    "-mno-red-zone",
+    "-mgeneral-regs-only",
+    "-fno-stack-protector",
+    "-fno-stack-check",
+    "-fno-strict-aliasing",
+    "-fno-lto",
+    "-g",
+    "-std=gnu23",
+    "-nostdinc",
+    "-fno-omit-frame-pointer",
+    "-mcmodel=kernel",
+}
 
 for name, source in pairs(modules) do
     local obj = cc:compile_object(name .. ".o", source, include_dirs, cflags_module)

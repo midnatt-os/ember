@@ -3,6 +3,7 @@
 #include "common/asm.h"
 #include "common/assert.h"
 #include "common/log.h"
+#include "common/panic.h"
 #include "cpu/cpu.h"
 #include "cpu/interrupts.h"
 #include "cpu/msr.h"
@@ -17,6 +18,20 @@
 #define LAPIC_ENABLE (1 << 8)
 #define LAPIC_SPURIOUS_VECTOR 0xFF
 #define LAPIC_LVT_MASK (1 << 16)
+
+#define LAPIC_TIMER_MODE_ONE_SHOT (0 << 17)
+#define LAPIC_TIMER_MODE_PERIODIC (1 << 17)
+
+#define LAPIC_ICR_DEST_PHYSICAL (0u << 11)
+#define LAPIC_ICR_DEST_LOGICAL (1u << 11)
+
+#define LAPIC_ICR_LEVEL_DEASSERT (0u << 14)
+#define LAPIC_ICR_LEVEL_ASSERT (1u << 14)
+
+#define LAPIC_ICR_TRIG_EDGE (0u << 15)
+#define LAPIC_ICR_TRIG_LEVEL (1u << 15)
+
+#define LAPIC_ICR_DEST_SHIFT 24
 
 enum {
     LAPIC_REG_ID = 0x20,
@@ -60,8 +75,12 @@ static void write(uint32_t reg, uint32_t data) {
     mmio_write32(lapic_base + reg, data);
 }
 
-static void spur_handler(interrupt_frame_t* _) {
+void lapic_eoi() {
     write(LAPIC_REG_EOI, 0);
+}
+
+static void spur_handler([[maybe_unused]] interrupt_frame_t* frame) {
+    lapic_eoi();
 }
 
 static uint64_t timer_measure() {
@@ -71,14 +90,55 @@ static uint64_t timer_measure() {
     while (tsc_time() < t_end)
         relax();
 
-    return (UINT32_MAX - read(LAPIC_TIMER_COUNT) + 100 / 2) / 100;
+    uint32_t elapsed = UINT32_MAX - read(LAPIC_TIMER_COUNT);
+
+    return (uint64_t) elapsed * 10;
 }
 
-/*void lapic_timer_oneshot(uint64_t ns, uint8_t vector) {
-    uint64_t ticks = ns_to_ticks(ns);
-    lapic_write(REG_LVT_TIMER, vector);
-    lapic_write(REG_TIMER_INIT, ticks);
-}*/
+void lapic_timer_one_shot(uint64_t ns, uint8_t vec) {
+    if (ns == 0)
+        ns = 1;
+
+    uint64_t hz = CPU_CURRENT->lapic_timer_freq;
+    uint64_t ticks = (ns * hz) / 1000000000ull;
+    if (ticks == 0)
+        ticks = 1;
+    if (ticks > UINT32_MAX)
+        ticks = UINT32_MAX;
+
+    write(LAPIC_LVT_TIMER, vec | LAPIC_TIMER_MODE_ONE_SHOT);
+    write(LAPIC_TIMER_INITIAL_COUNT, (uint32_t) ticks);
+}
+
+void lapic_timer_stop() {
+    // Mask the timer interrupt and clear current count
+    uint32_t lvt = mmio_read32(lapic_base + LAPIC_LVT_TIMER);
+    lvt |= LAPIC_LVT_MASK;
+    write(LAPIC_LVT_TIMER, lvt);
+    write(LAPIC_TIMER_INITIAL_COUNT, 0);
+}
+
+static void lapic_wait_for_icr() {
+    while (read(LAPIC_REG_ICR_LO) & LAPIC_REG_ICR_LO_STATUS)
+        ;
+}
+
+void lapic_send_ipi(uint32_t lapic_id, uint8_t vector, lapic_delivery_mode_t delivery_mode, lapic_dest_shorthand_t shorthand) {
+    lapic_wait_for_icr();
+
+    if (shorthand == LAPIC_DS_NONE)
+        write(LAPIC_REG_ICR_HI, lapic_id << LAPIC_ICR_DEST_SHIFT);
+    else
+        write(LAPIC_REG_ICR_HI, 0);
+
+    uint32_t lo = (uint32_t) vector | delivery_mode | LAPIC_ICR_DEST_PHYSICAL | LAPIC_ICR_LEVEL_ASSERT | LAPIC_ICR_TRIG_EDGE | shorthand;
+
+    write(LAPIC_REG_ICR_LO, lo);
+}
+
+void lapic_broadcast_ipi(uint8_t vector, lapic_delivery_mode_t delivery_mode, bool include_self) {
+    lapic_send_ipi(0, vector, delivery_mode, include_self ? LAPIC_DS_ALL : LAPIC_DS_OTHERS);
+}
 
 
 void lapic_init() {
@@ -92,8 +152,8 @@ void lapic_init() {
     write(0x80, 0); // TPR accept all priorities
 
     write(LAPIC_TIMER_DIVIDE, 0x3); // 16
-    CPU_CURRENT.lapic_timer_freq = timer_measure();
-    logln(LOG_INFO, "LAPIC", "(CPU%lu) Initialized, freq: %llu", CPU_CURRENT.seq_id, CPU_CURRENT.lapic_timer_freq);
+    CPU_CURRENT->lapic_timer_freq = timer_measure();
+    logln(LOG_INFO, "LAPIC", "(CPU%lu) Initialized, freq: %llu", CPU_CURRENT->seq_id, CPU_CURRENT->lapic_timer_freq);
 }
 
 void lapic_bsp_init() {

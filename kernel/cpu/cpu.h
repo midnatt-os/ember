@@ -1,12 +1,19 @@
 #pragma once
 
+#include "lib/rb.h"
+#include "sched/sched.h"
+#include "sys/timers.h"
+
 #include <stdint.h>
 
-#define CPU_CURRENT (*(__seg_gs cpu_t*) nullptr)
+#define CPU_CURRENT ((*(__seg_gs cpu_t*) nullptr).self)
 
 typedef struct cpu {
     struct cpu* self;
     uint64_t seq_id;
     uint64_t lapic_id;
     uint64_t lapic_timer_freq;
+
+    timer_queue_t timer_queue;
+    scheduler_t scheduler;
 } cpu_t;

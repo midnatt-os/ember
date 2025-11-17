@@ -31,6 +31,24 @@
 struct flanterm_context* ft_ctx = nullptr;
 spinlock_t log_lock = SPINLOCK_NEW;
 
+extern bool panic_in_progress;
+
+static inline bool log_lock_acquire(bool* taken) {
+    if (__atomic_load_n(&panic_in_progress, __ATOMIC_RELAXED)) {
+        *taken = false;
+        return false;
+    }
+    *taken = true;
+    return spinlock_lock(&log_lock);
+}
+
+static inline void log_lock_release(bool taken, bool prev) {
+    if (!taken)
+        return;
+    spinlock_unlock(&log_lock, prev);
+}
+
+
 uint64_t get_time_zero() {
     return 0;
 }
@@ -110,34 +128,44 @@ void log_list(LogLevel level, const char* tag, const char* fmt, va_list list) {
 }
 
 void log(LogLevel level, const char* tag, const char* fmt, ...) {
-    bool prev = spinlock_lock(&log_lock);
+    bool taken;
+    bool prev = log_lock_acquire(&taken);
+
     va_list args;
     va_start(args, fmt);
     log_list(level, tag, fmt, args);
     va_end(args);
-    spinlock_unlock(&log_lock, prev);
+
+    log_lock_release(taken, prev);
 }
 
 void logln(LogLevel level, const char* tag, const char* fmt, ...) {
-    bool prev = spinlock_lock(&log_lock);
+    bool taken;
+    bool prev = log_lock_acquire(&taken);
+
     va_list args;
     va_start(args, fmt);
     log_list(level, tag, fmt, args);
     log_putc('\n');
     va_end(args);
-    spinlock_unlock(&log_lock, prev);
+
+    log_lock_release(taken, prev);
 }
 
 void log_raw(const char* fmt, ...) {
-    bool prev = spinlock_lock(&log_lock);
+    bool taken;
+    bool prev = log_lock_acquire(&taken);
+
     va_list list;
     va_start(list, fmt);
     char buffer[512];
     npf_vsnprintf(buffer, sizeof(buffer), fmt, list);
     log_puts(buffer);
     va_end(list);
-    spinlock_unlock(&log_lock, prev);
+
+    log_lock_release(taken, prev);
 }
+
 void log_init() {
     struct limine_framebuffer* fb = framebuffer_request.response->framebuffers[0];
     ft_ctx = flanterm_fb_init(

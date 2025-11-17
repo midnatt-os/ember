@@ -457,11 +457,11 @@ void vm_load_as(vm_address_space_t* as) {
 void vm_init() {
     global_as = (vm_address_space_t) {
         .cr3 = pmm_alloc(PMM_ZERO),
-        .regions = RB_NEW(region_rb_value),
         .lock = SPINLOCK_NEW,
         .lower_bound = KERNELSPACE_START,
         .upper_bound = KERNELSPACE_END,
     };
+    rb_tree_init(&global_as.regions, region_rb_value);
 
     uint64_t* pml4 = (uint64_t*) HHDM(global_as.cr3);
     for (size_t i = 256; i < 512; i++)

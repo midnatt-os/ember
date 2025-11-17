@@ -25,16 +25,26 @@
 #include "mem/ptm.h"
 #include "mem/slab.h"
 #include "mem/vm.h"
+#include "sched/sched.h"
+#include "sched/thread.h"
 #include "sys/acpi.h"
 #include "sys/modules.h"
 #include "sys/time.h"
+#include "sys/timers.h"
 
+#include <stdatomic.h>
 #include <stddef.h>
 #include <stdint.h>
 
 cpu_t* cpus = nullptr;
 
 uint64_t current_ap_id = 1;
+static bool aps_release_barrier = false;
+
+static void wait_for_aps_release() {
+    while (!atomic_load_explicit(&aps_release_barrier, memory_order_acquire))
+        relax();
+}
 
 void ap_init([[maybe_unused]] struct limine_mp_info* cpu_info) {
     gdt_init();
@@ -54,6 +64,11 @@ void ap_init([[maybe_unused]] struct limine_mp_info* cpu_info) {
     logln(LOG_INFO, "SMP", "CPU%lu online", cpu->seq_id);
 
     lapic_init();
+
+    timer_init_cpu();
+
+    wait_for_aps_release();
+    sched_init_cpu();
 
     while (true)
         halt();
@@ -100,6 +115,13 @@ void ap_init([[maybe_unused]] struct limine_mp_info* cpu_info) {
     }
 
     lapic_bsp_init();
+
+    timer_init_cpu();
+
+    thread_cache = slab_create_cache("thread", sizeof(thread_t), PAGE_SIZE);
+
+    atomic_store_explicit(&aps_release_barrier, true, memory_order_release);
+    sched_init_cpu();
 
     while (true)
         halt();

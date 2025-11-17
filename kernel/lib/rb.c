@@ -2,6 +2,7 @@
 // TODO: Maybe switch to NIL sentinel nodes instead of nullptr?
 
 #include "common/assert.h"
+#include "common/log.h"
 
 #include <stddef.h>
 
@@ -11,8 +12,28 @@
 #define IS_RED(NODE) ((NODE)->color)
 #define IS_BLACK(NODE) (!(NODE)->color)
 
+void rb_tree_init(rb_tree_t* tree, rb_value_t (*value)(const rb_node_t* n)) {
+    tree->value = value;
+    tree->count = 0;
+    tree->nil_node = (rb_node_t) { 0 };
+    tree->nil = &tree->nil_node;
+    tree->root = tree->nil;
 
-rb_node_t NIL_NODE = { .parent = &NIL_NODE, .left = &NIL_NODE, .right = &NIL_NODE, .color = false };
+    tree->nil_node.parent = tree->nil;
+    tree->nil_node.left = tree->nil;
+    tree->nil_node.right = tree->nil;
+    tree->nil_node.color = BLACK;
+}
+
+static inline bool rb_node_is_linked_in(const rb_tree_t* tree, const rb_node_t* node) {
+    if (!node)
+        return false;
+    if (node->parent == NULL && node->left == NULL && node->right == NULL)
+        return false;
+    if (node == tree->root)
+        return true;
+    return node->parent != tree->nil || node->left != tree->nil || node->right != tree->nil;
+}
 
 static inline rb_node_t* grandparent(rb_tree_t* tree, rb_node_t* n) {
     return n->parent == tree->nil ? tree->nil : n->parent->parent;
@@ -170,6 +191,9 @@ static void insert_fixup(rb_tree_t* tree, rb_node_t* z) {
 }
 
 void rb_insert(rb_tree_t* tree, rb_node_t* node) {
+    // ASSERT(node != tree->nil);
+    // ASSERT(!rb_node_is_linked_in(tree, node));
+
     tree->count++;
     *node = (rb_node_t) {
         .left = tree->nil,
@@ -281,6 +305,9 @@ static void delete_fixup(rb_tree_t* tree, rb_node_t* x) {
 }
 
 void rb_delete(rb_tree_t* tree, rb_node_t* z) {
+    ASSERT(z != tree->nil);
+    ASSERT(rb_node_is_linked_in(tree, z));
+
     rb_node_t* y = z;
     bool y_original_color = y->color;
     rb_node_t* x;

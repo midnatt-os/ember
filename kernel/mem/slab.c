@@ -80,6 +80,7 @@ alloc:
     }
 
     slab_t* new_slab = cache_grow(cache);
+    ASSERT(new_slab->freelist);
     list_prepend(&cache->partial_slabs, &new_slab->list_node);
 
     goto alloc;

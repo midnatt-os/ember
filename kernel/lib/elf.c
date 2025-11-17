@@ -8,6 +8,7 @@
 #include "mem/page.h"
 #include "mem/vm.h"
 
+#include <limits.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -274,9 +275,19 @@ bool elf_apply_relocations(const dyn_info_t* di, const elf_image_t* img) {
                     break;
                 }
 
-                case R_X86_64_32: *(uint32_t*) loc = (uint32_t) (S + A); break;
+                case R_X86_64_32: {
+                    uint64_t val = S + A;
+                    ASSERT(val <= UINT32_MAX);
+                    *(uint32_t*) loc = (uint32_t) val;
+                    break;
+                }
 
-                case R_X86_64_32S: *(int32_t*) loc = (int32_t) (S + A); break;
+                case R_X86_64_32S: {
+                    int64_t sval = (int64_t) (S + A);
+                    ASSERT(sval >= INT32_MIN && sval <= INT32_MAX);
+                    *(int32_t*) loc = (int32_t) sval;
+                    break;
+                }
 
                 default: ASSERT_UNREACHABLE();
             }
