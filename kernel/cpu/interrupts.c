@@ -6,6 +6,7 @@
 #include "common/panic.h"
 #include "cpu/cpu.h"
 #include "cpu/gdt.h"
+#include "sched/sched.h"
 #include "sched/thread.h"
 #include "stdatomic.h"
 
@@ -80,11 +81,29 @@ void interrupts_load_idt() {
 }
 
 void ss_handler(interrupt_frame_t* frame) {
-    panic("-- STACK-SEGMENT FAULT --\nRIP=%#p\nRIP=%#p", frame->rip, frame->rsp);
+    panic("-- STACK-SEGMENT FAULT --\nrip=%#p\nrsp=%#p", frame->rip, frame->rsp);
 }
 
 void gpf_handler(interrupt_frame_t* frame) {
-    panic("-- GENERAL PROTECTION FAULT --\nRIP=%#p", frame->rip);
+    log_raw(
+        "rax=%#lx rcx=%#lx rdx=%#lx rsi=%#lx rdi=%#lx rbx=%#lx rbp=%#lx r8=%#lx r9=%#lx r10=%#lx r11=%#lx r12=%#lx r13=%#lx r14=%#lx r15=%#lx\n",
+        frame->rax,
+        frame->rcx,
+        frame->rdx,
+        frame->rsi,
+        frame->rdi,
+        frame->rbx,
+        frame->rbp,
+        frame->r8,
+        frame->r9,
+        frame->r10,
+        frame->r11,
+        frame->r12,
+        frame->r13,
+        frame->r14,
+        frame->r15
+    );
+    panic("-- GENERAL PROTECTION FAULT --\nrip=%#p\nrsp=%#p", frame->rip, frame->rsp);
 }
 
 static inline char flag(uint64_t err, uint64_t bit, char c) {
@@ -105,7 +124,9 @@ void pf_handler(interrupt_frame_t* frame) {
         '\0',
     };
 
-    panic("-- PAGE FAULT --\nCR2=%#p ERR=%#lx [%s]", cr2_read(), err, flags);
+    thread_t* thread = CPU_CURRENT->scheduler.current_thread;
+    log_raw("%s, base: %#p, size: %#p\n", thread->name, thread->kstack_base, thread->kstack_size);
+    panic("-- PAGE FAULT --\ncr2=%#p ERR=%#lx [%s]\nrsp=%#p\nrip=%#p\n", cr2_read(), err, flags, frame->rsp, frame->rip);
 }
 
 extern uint64_t panic_ack_count;

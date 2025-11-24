@@ -191,9 +191,6 @@ static void insert_fixup(rb_tree_t* tree, rb_node_t* z) {
 }
 
 void rb_insert(rb_tree_t* tree, rb_node_t* node) {
-    // ASSERT(node != tree->nil);
-    // ASSERT(!rb_node_is_linked_in(tree, node));
-
     tree->count++;
     *node = (rb_node_t) {
         .left = tree->nil,

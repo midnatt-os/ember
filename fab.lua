@@ -17,7 +17,7 @@ local c_flags = {
     "-fno-stack-check",
     "-fno-strict-aliasing",
 
-    --"-fsanitize=undefined",
+    "-fsanitize=undefined",
 
     "-O0",
     "-g",

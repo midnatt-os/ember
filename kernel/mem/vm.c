@@ -246,7 +246,9 @@ vm_region_t* region_alloc() {
     if (!list_is_empty(&region_pool)) {
         list_node_t* n = list_pop(&region_pool);
         spinlock_unlock(&region_pool_lock, prev_pool);
-        return CONTAINER_OF(n, vm_region_t, pool_node);
+        vm_region_t* r = CONTAINER_OF(n, vm_region_t, pool_node);
+        *r = (vm_region_t) { 0 };
+        return r;
     }
 
     spinlock_unlock(&region_pool_lock, prev_pool);
@@ -259,19 +261,23 @@ vm_region_t* region_alloc() {
         list_append(&region_pool, &new_regions[i].pool_node);
 
     vm_region_t* r = CONTAINER_OF(list_pop(&region_pool), vm_region_t, pool_node);
+    *r = (vm_region_t) { 0 };
 
     spinlock_unlock(&region_pool_lock, prev);
 
     return r;
 }
 
-static vm_region_t* region_extract_range(vm_address_space_t* as, vm_region_t* region, uintptr_t start, size_t length, vm_prot_t new_prot) {
+static vm_region_t* region_extract_range(vm_address_space_t* as, vm_region_t* region, uintptr_t start, size_t length) {
     const uintptr_t orig_base = region->base;
     const uintptr_t orig_end = region->base + region->length;
     const uintptr_t target_end = start + length;
 
+    ASSERT(start >= orig_base);
+    ASSERT(target_end <= orig_end);
+
     vm_region_type_t type = region->type;
-    vm_prot_t old_prot = region->prot;
+    vm_prot_t prot = region->prot;
     vm_caching_t caching = region->caching;
     bool on_demand = region->on_demand;
     bool zeroed = (type == VM_REGION_TYPE_ANON) ? region->type_data.anon.zeroed : false;
@@ -279,32 +285,33 @@ static vm_region_t* region_extract_range(vm_address_space_t* as, vm_region_t* re
 
     rb_delete(&as->regions, &region->rb_node);
 
-    vm_region_t* target = region;
-
+    // Left part: [orig_base, start)
     if (start > orig_base) {
-        size_t left_len = start - orig_base;
         region->base = orig_base;
-        region->length = left_len;
+        region->length = start - orig_base;
         region->type = type;
-        region->prot = old_prot;
+        region->prot = prot;
         region->caching = caching;
         region->on_demand = on_demand;
-        if (type == VM_REGION_TYPE_ANON) {
+        if (type == VM_REGION_TYPE_ANON)
             region->type_data.anon.zeroed = zeroed;
-        } else {
+        else
             region->type_data.direct.phys_addr = phys_base;
-        }
-
         region_insert(as, region);
+    }
 
+    vm_region_t* target;
+    if (start > orig_base) {
         target = region_alloc();
+    } else {
+        target = region;
     }
 
     target->as = as;
     target->base = start;
     target->length = length;
     target->type = type;
-    target->prot = new_prot;
+    target->prot = prot;
     target->caching = caching;
     target->on_demand = on_demand;
     if (type == VM_REGION_TYPE_ANON) {
@@ -313,15 +320,14 @@ static vm_region_t* region_extract_range(vm_address_space_t* as, vm_region_t* re
         target->type_data.direct.phys_addr = phys_base + (start - orig_base);
     }
 
-    region_insert(as, target);
-
+    // Tail: [target_end, orig_end)
     if (target_end < orig_end) {
         vm_region_t* tail = region_alloc();
         tail->as = as;
         tail->base = target_end;
         tail->length = orig_end - target_end;
         tail->type = type;
-        tail->prot = old_prot;
+        tail->prot = prot;
         tail->caching = caching;
         tail->on_demand = on_demand;
         if (type == VM_REGION_TYPE_ANON) {
@@ -334,6 +340,7 @@ static vm_region_t* region_extract_range(vm_address_space_t* as, vm_region_t* re
 
     return target;
 }
+
 
 static void region_map(vm_region_t* region, uintptr_t address, uintptr_t length) {
     ASSERT(address % PAGE_SIZE == 0 && length % PAGE_SIZE == 0);
@@ -397,8 +404,62 @@ void* vm_map_direct(vm_address_space_t* as, void* hint, size_t length, size_t al
     return map_common(as, hint, length, align, paddr, prot, caching, VM_REGION_TYPE_DIRECT, flags);
 }
 
-void vm_unmap([[maybe_unused]] vm_address_space_t* as, [[maybe_unused]] void* base, [[maybe_unused]] size_t length) {
-    logln(LOG_WARN, "VM", "vm_unmap stubbed");
+void vm_unmap(vm_address_space_t* as, void* base, size_t length) {
+    if (length == 0)
+        return;
+
+    uintptr_t addr = (uintptr_t) base;
+
+    ASSERT((addr % PAGE_SIZE) == 0);
+    ASSERT((length % PAGE_SIZE) == 0);
+
+    bool prev = spinlock_lock(&as->lock);
+    size_t remaining = length;
+
+    while (remaining) {
+        vm_region_t* region = region_find(as, addr);
+        if (!region) {
+            logln(LOG_WARN, "VM", "vm_unmap: no region for addr 0x%lx", addr);
+            break;
+        }
+
+        uintptr_t region_end = region->base + region->length;
+        size_t chunk = region_end - addr;
+        if (chunk > remaining)
+            chunk = remaining;
+
+        vm_region_t* target = region_extract_range(as, region, addr, chunk);
+        ASSERT(target);
+        ASSERT(target->base == addr);
+
+        size_t target_len = target->length;
+        vm_region_type_t type = target->type;
+
+        for (size_t off = 0; off < target_len; off += PAGE_SIZE) {
+            uintptr_t va = addr + off;
+
+            uintptr_t pa = ptm_virt_to_phys(as, va);
+            if (!pa) {
+                ptm_unmap(as, va, PAGE_SIZE);
+                invlpg(va);
+                continue;
+            }
+
+            ptm_unmap(as, va, PAGE_SIZE);
+            invlpg(va);
+
+            if (type == VM_REGION_TYPE_ANON) {
+                pmm_free(pa);
+            }
+        }
+
+        region_free(target);
+
+        addr += target_len;
+        remaining -= target_len;
+    }
+
+    spinlock_unlock(&as->lock, prev);
 }
 
 void vm_protect(vm_address_space_t* as, void* base, size_t length, vm_prot_t prot) {
@@ -423,22 +484,30 @@ void vm_protect(vm_address_space_t* as, void* base, size_t length, vm_prot_t pro
             chunk = remaining;
 
         if (!prot_equal(region->prot, prot)) {
-            vm_region_t* target = region_extract_range(as, region, addr, chunk, prot);
+            vm_region_t* target = region_extract_range(as, region, addr, chunk);
             if (target) {
+                vm_region_type_t type = target->type;
+                vm_caching_t caching = target->caching;
+
                 target->prot = prot;
+
                 for (size_t off = 0; off < chunk; off += PAGE_SIZE) {
                     uintptr_t va = addr + off;
                     uintptr_t pa;
-                    if (target->type == VM_REGION_TYPE_DIRECT) {
+
+                    if (type == VM_REGION_TYPE_DIRECT) {
                         pa = target->type_data.direct.phys_addr + (va - target->base);
                     } else {
                         pa = ptm_virt_to_phys(as, va);
                         if (!pa)
                             continue;
                     }
-                    ptm_map(as, va, pa, PAGE_SIZE, prot, target->caching);
+
+                    ptm_map(as, va, pa, PAGE_SIZE, prot, caching);
                     invlpg(va);
                 }
+
+                region_insert(as, target);
             }
         }
 
@@ -448,7 +517,6 @@ void vm_protect(vm_address_space_t* as, void* base, size_t length, vm_prot_t pro
 
     spinlock_unlock(&as->lock, prev);
 }
-
 
 void vm_load_as(vm_address_space_t* as) {
     cr3_write(as->cr3);
@@ -477,6 +545,21 @@ void vm_init() {
         &global_as, __LIMINE_REQ_START, __LIMINE_REQ_END - __LIMINE_REQ_START, 0, kernel_addr->physical_base + ((uintptr_t) __LIMINE_REQ_START - kernel_addr->virtual_base), (vm_prot_t) { .read = true }, VM_CACHING_WRITE_BACK, VM_FLAG_FIXED
     );
 
+    /*
+    struct limine_memmap_response* memmap = memmap_request.response;
+    for (size_t i = 0; i < memmap->entry_count; i++) {
+        struct limine_memmap_entry* e = memmap->entries[i];
+        if (e->type == LIMINE_MEMMAP_RESERVED || e->type == LIMINE_MEMMAP_BAD_MEMORY)
+            continue;
+
+        vm_caching_t cache = (e->type == LIMINE_MEMMAP_FRAMEBUFFER) ? VM_CACHING_WRITE_COMBINE : VM_CACHING_WRITE_BACK;
+
+        size_t len = ALIGN_UP(e->length, PAGE_SIZE);
+        void* va = (void*) HHDM(e->base);
+        vm_map_direct(&global_as, va, len, PAGE_SIZE, e->base, VM_PROT_RW, cache, VM_FLAG_FIXED);
+    }
+    */
+
     struct limine_memmap_response* memmap = memmap_request.response;
     for (size_t i = 0; i < memmap->entry_count; i++) {
         struct limine_memmap_entry* e = memmap->entries[i];
@@ -486,12 +569,22 @@ void vm_init() {
             case LIMINE_MEMMAP_BAD_MEMORY:  continue;
             case LIMINE_MEMMAP_FRAMEBUFFER: {
                 ptm_map_2mb_special(&global_as, HHDM(e->base), e->base, ALIGN_UP(e->length, PAGE_SIZE), VM_PROT_RW, VM_CACHING_WRITE_COMBINE);
+                vm_region_t* r = region_alloc();
+                *r = (vm_region_t) {
+                    .as = &global_as,
+                    .base = HHDM(e->base),
+                    .length = e->length,
+                    .type = VM_REGION_TYPE_DIRECT,
+                    .prot = VM_PROT_RW,
+                    .caching = VM_CACHING_WRITE_COMBINE,
+                };
+
+                region_insert(&global_as, r);
                 continue;
             }
         }
 
         ptm_map_2mb_special(&global_as, HHDM(e->base), e->base, e->length, VM_PROT_RW, VM_CACHING_WRITE_BACK);
-
         vm_region_t* r = region_alloc();
         *r = (vm_region_t) {
             .as = &global_as,

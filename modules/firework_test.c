@@ -1,3 +1,4 @@
+#include "common/assert.h"
 #include "common/limine_requests.h"
 #include "common/lock/spinlock.h"
 #include "common/log.h"
@@ -254,7 +255,7 @@ static void firework_thread_entry(void) {
 
     void (*fn)(void*) = job->func;
     void* arg = job->arg;
-    heap_free(job, sizeof(*job));
+    heap_free(job, sizeof(struct firework_job));
 
     fn(arg);
     thread_exit();
@@ -271,7 +272,7 @@ static bool firework_spawn_thread(const char* name, void (*func)(void*), void* a
 
     thread_t* thread = thread_create_kernel((char*) name, firework_thread_entry);
     if (!thread) {
-        heap_free(job, sizeof(*job));
+        heap_free(job, sizeof(struct firework_job));
         return false;
     }
 
@@ -320,18 +321,12 @@ static void particle_thread(void* arg) {
     }
 }
 
-static bool spawn_particle(struct firework_data* data) {
-    struct firework_data* pdata = heap_alloc(sizeof(*pdata));
-    if (!pdata)
-        return false;
-
-    *pdata = *data;
-
-    if (!firework_spawn_thread("fwork-particle", particle_thread, pdata)) {
-        heap_free(pdata, sizeof(*pdata));
+static bool spawn_particle(struct firework_data* owned_data) {
+    // owned_data must be HEAP ALLOCATED
+    if (!firework_spawn_thread("fwork-particle", particle_thread, owned_data)) {
+        heap_free(owned_data, sizeof(*owned_data));
         return false;
     }
-
     return true;
 }
 
@@ -373,10 +368,14 @@ static void explode_thread(void* arg) {
 
     int particle_count = 100 + (int) (xoshiro256pp(&rng) % 100);
     for (int i = 0; i < particle_count; i++) {
-        struct firework_data pdata = data;
-        pdata.rngseed = xoshiro256pp(&rng);
-        if (!spawn_particle(&pdata))
+        struct firework_data* pdata = heap_alloc(sizeof(*pdata));
+        *pdata = data;
+        pdata->rngseed = xoshiro256pp(&rng);
+
+        if (!spawn_particle(pdata)) {
+            heap_free(pdata, sizeof(*pdata));
             break;
+        }
     }
 }
 

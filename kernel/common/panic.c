@@ -28,6 +28,7 @@ void panic(const char* fmt, ...) {
     va_start(list, fmt);
 
     atomic_store_explicit(&panic_in_progress, true, memory_order_release);
+    log_raw("(CPU%d) ", CPU_CURRENT->seq_id);
     log_list(LOG_ERROR, "PANIC", fmt, list);
     log_raw("\n");
     log_stack_trace();

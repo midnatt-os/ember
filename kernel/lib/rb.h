@@ -20,10 +20,6 @@ typedef struct {
     rb_node_t nil_node;
 } rb_tree_t;
 
-static inline bool rb_node_is_linked(const rb_node_t* n) {
-    return n->parent || n->left || n->right;
-}
-
 void rb_tree_init(rb_tree_t* tree, rb_value_t (*value)(const rb_node_t* n));
 void rb_insert(rb_tree_t* tree, rb_node_t* new_node);
 rb_node_t* rb_find(rb_tree_t* tree, size_t key);

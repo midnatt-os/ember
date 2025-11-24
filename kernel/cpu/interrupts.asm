@@ -28,7 +28,7 @@ isr_stub:
     push r14
     push r15
 
-    ;xor rbp, rbp  ; In case of stack trace, stop here.
+    xor rbp, rbp  ; In case of stack trace, stop here.
     mov rdi, rsp  ; InterruptFrame argument
     call common_int_handler
 

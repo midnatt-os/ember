@@ -52,13 +52,20 @@ static uint64_t* table_walk_create(uint64_t* table, uintptr_t vaddr, int level, 
     return (uint64_t*) HHDM(next_table_phys);
 }
 
-/*static bool table_is_empty(const uint64_t* table) {
-    for (size_t i = 0; i < 512; i++) {
-        if (table[i] & PAGE_PRESENT)
-            return false;
-    }
-    return true;
-}*/
+static uint64_t* table_walk_existing(uint64_t* table, uintptr_t vaddr, int level) {
+    uint64_t idx = VADDR_TO_INDEX(vaddr, level);
+    uint64_t entry = table[idx];
+
+    if (!(entry & PAGE_PRESENT))
+        return NULL;
+
+    // We don’t support tearing down 2MiB mappings here.
+    if (level == 2 && (entry & PAGE_PS))
+        return NULL;
+
+    uintptr_t next_phys = entry & ADDR_MASK;
+    return (uint64_t*) HHDM(next_phys);
+}
 
 
 static uint64_t caching_to_flags(vm_caching_t caching) {
@@ -146,8 +153,42 @@ void ptm_map(vm_address_space_t* as, uintptr_t virt_addr, uintptr_t phys_addr, s
     }
 }
 
-void ptm_unmap([[maybe_unused]] vm_address_space_t* as, [[maybe_unused]] uintptr_t addr, [[maybe_unused]] size_t length) {
-    logln(LOG_WARN, "PTM", "ptm_unmap stubbed");
+void ptm_unmap(vm_address_space_t* as, uintptr_t addr, size_t length) {
+    bool is_kernel = (as == &global_as);
+    (void) is_kernel; // currently unused but kept for symmetry
+
+    ASSERT((addr % PAGE_SIZE) == 0);
+    ASSERT((length % PAGE_SIZE) == 0);
+
+    for (size_t off = 0; off < length; off += PAGE_SIZE) {
+        uintptr_t va = addr + off;
+
+        uint64_t* table = (uint64_t*) HHDM(as->cr3);
+
+        // Walk down to the level-1 table without creating anything
+        for (int level = 4; level > 1; --level) {
+            table = table_walk_existing(table, va, level);
+            if (!table) {
+                // No mapping at some level; nothing to do
+                goto next_page;
+            }
+        }
+
+        {
+            uint64_t idx = VADDR_TO_INDEX(va, 1);
+            uint64_t entry = table[idx];
+            if (!(entry & PAGE_PRESENT))
+                goto next_page;
+
+            uint64_t zero = 0;
+            __atomic_store(&table[idx], &zero, __ATOMIC_SEQ_CST);
+        }
+
+        // TLB shootdown – local only for now
+        invlpg(va);
+
+    next_page:;
+    }
 }
 
 
@@ -186,7 +227,14 @@ uintptr_t ptm_virt_to_phys(vm_address_space_t* as, uintptr_t virt_addr) {
         if (!(entry & PAGE_PRESENT))
             return 0;
 
-        uint64_t next_phys = entry & ADDR_MASK;
+        // Handle 2 MiB pages at level 2.
+        if (level == 2 && (entry & PAGE_PS)) {
+            uintptr_t base = entry & ADDR_MASK_2MB;
+            uintptr_t off = virt_addr & ((1ULL << 21) - 1); // 2 MiB - 1
+            return base + off;
+        }
+
+        uintptr_t next_phys = entry & ADDR_MASK;
         table = (uint64_t*) HHDM(next_phys);
     }
 

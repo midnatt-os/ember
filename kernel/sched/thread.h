@@ -22,6 +22,7 @@ typedef struct {
     uint32_t cpu_id;
 
     list_node_t sched_list_node;
+    list_node_t reap_list_node;
 
     void* kstack_base;
     size_t kstack_size;
@@ -30,5 +31,8 @@ typedef struct {
 } thread_t;
 
 extern object_cache_t* thread_cache;
+
+void thread_exit();
+void thread_destroy(thread_t* thread);
 
 thread_t* thread_create_kernel(char* name, void* entry_fn);

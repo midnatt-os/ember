@@ -1,13 +1,11 @@
 #pragma once
 
+#include "common/lock/spinlock.h"
 #include "lib/rb.h"
 
 #include <stdint.h>
 
 typedef void (*timer_fn_t)(void*);
-
-struct timer_queue;
-typedef struct timer_queue timer_queue_t;
 
 typedef struct {
     uint64_t expiration_time;
@@ -17,10 +15,11 @@ typedef struct {
     rb_node_t node;
 } timer_t;
 
-struct timer_queue {
+typedef struct {
     rb_tree_t queue;
     uint64_t next_deadline;
-};
+    spinlock_t lock;
+} timer_queue_t;
 
 static inline timer_t timer_create(timer_fn_t callback, void* arg) {
     return (timer_t) {
