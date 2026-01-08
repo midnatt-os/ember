@@ -37,6 +37,7 @@
 #include <stdint.h>
 
 cpu_t* cpus = nullptr;
+volatile uint64_t cpu_online_count = 0;
 
 uint64_t current_ap_id = 1;
 static bool aps_release_barrier = false;
@@ -51,6 +52,7 @@ void ap_init([[maybe_unused]] struct limine_mp_info* cpu_info) {
     interrupts_init();
     pat_enable();
     vm_load_as(&global_as);
+    vm_ap_init();
 
     cpu_t* cpu = &cpus[cpu_info->extra_argument];
     msr_write(MSR_GS_BASE, (uint64_t) cpu);
@@ -66,6 +68,7 @@ void ap_init([[maybe_unused]] struct limine_mp_info* cpu_info) {
     lapic_init();
 
     timer_init_cpu();
+    __atomic_fetch_add(&cpu_online_count, 1, __ATOMIC_RELEASE);
 
     wait_for_aps_release();
     sched_init_cpu();
@@ -117,6 +120,7 @@ void ap_init([[maybe_unused]] struct limine_mp_info* cpu_info) {
     lapic_bsp_init();
 
     timer_init_cpu();
+    cpu_online_count = 1;
 
     thread_cache = slab_create_cache("thread", sizeof(thread_t), PAGE_SIZE);
 

@@ -13,7 +13,11 @@ typedef struct cpu {
     uint64_t seq_id;
     uint64_t lapic_id;
     uint64_t lapic_timer_freq;
+    uint64_t tlb_gen;
 
     timer_queue_t timer_queue;
     scheduler_t scheduler;
 } cpu_t;
+
+extern cpu_t* cpus;
+extern volatile uint64_t cpu_online_count;

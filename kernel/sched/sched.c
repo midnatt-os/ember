@@ -7,6 +7,7 @@
 #include "common/log.h"
 #include "cpu/cpu.h"
 #include "cpu/tsc.h"
+#include "flanterm.h"
 #include "lib/container.h"
 #include "lib/list.h"
 #include "limine.h"
@@ -101,16 +102,19 @@ static thread_t* pick_next_thread() {
 }
 
 static void switch_threads(thread_t* this, thread_t* next) {
-    if (!(*((uintptr_t*) (next->rsp + 6 * sizeof(uintptr_t)))) || (*((uintptr_t*) (next->rsp + 6 * sizeof(uintptr_t)))) == 0xAAAAAAAA) {
+    if (!(*((uintptr_t*) (next->rsp + 6 * sizeof(uintptr_t))))) {
         logln(LOG_WARN, "", "");
         log_raw("ERROR: Invalid return address for next thread!\n");
         log_raw("Thread Name: %s, stack base %#p, stack size %#p, Status: %lu, Stack Pointer: %p, Return Address: %p\n", next->name, next->kstack_base, next->kstack_size, next->status, next->rsp, *((uintptr_t*) (next->rsp + 6 * sizeof(uintptr_t))));
 
-        // Log the 6 register values between next->rsp and the return address
-        log_raw("Stack values between next->rsp and return address:\n");
-        for (int i = 0; i < 6; i++) {
-            uintptr_t stack_value = *((uintptr_t*) (next->rsp + i * sizeof(uintptr_t)));
-            log_raw("Stack value %d: %p\n", i, stack_value);
+        log_raw("Full stack dump for %s (base=%#p size=%zu bytes, rsp=%#p):\n", next->name, next->kstack_base, next->kstack_size, next->rsp);
+        uintptr_t* stack_words = (uintptr_t*) next->kstack_base;
+        size_t word_count = next->kstack_size / sizeof(uintptr_t);
+        for (size_t i = 0; i < word_count; i++) {
+            uintptr_t addr = (uintptr_t) (stack_words + i);
+            uintptr_t value = stack_words[i];
+            const char* marker = (addr == next->rsp) ? " <rsp>" : "";
+            log_raw("  [%04zu] %#018lx: %#018lx%s\n", i, (unsigned long) addr, (unsigned long) value, marker);
         }
 
         log_raw("Current Thread Name: %s, Status: %lu, Stack Pointer: %p, Return Address: %p\n", this->name, this->status, this->rsp, *((uintptr_t*) (this->rsp + 6 * sizeof(uintptr_t))));
@@ -119,7 +123,8 @@ static void switch_threads(thread_t* this, thread_t* next) {
         for (size_t off = 0; off < next->kstack_size; off += PAGE_SIZE) {
             uintptr_t va = (uintptr_t) next->kstack_base + off;
             uintptr_t pa = ptm_virt_to_phys(&global_as, va);
-            log_raw("  page %zu: va=%#p pa=%#p\n", off / PAGE_SIZE, (void*) va, (void*) pa);
+            uint32_t refs = pa ? page_ref_get(pa) : 0;
+            log_raw("  page %zu: va=%#p pa=%#p refs=%u\n", off / PAGE_SIZE, (void*) va, (void*) pa, refs);
         }
     }
 
@@ -183,9 +188,11 @@ void sched_sleep(uint64_t duration) {
 
 extern uint64_t pf_total_count;
 extern uint64_t pf_use_count;
+extern struct flanterm_context* ft_ctx;
 static void mem_info(void* _) {
     while (true) {
         logln(LOG_DEBUG, "MEM", "%lu / %lu MiB used.", pf_use_count / 256, pf_total_count / 256);
+        flanterm_full_refresh(ft_ctx);
         sched_sleep(s_to_ns(5));
     }
 }

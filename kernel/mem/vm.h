@@ -4,10 +4,11 @@
 #include "lib/list.h"
 #include "lib/rb.h"
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
-// TODO: guard pages, grow up, grow down. Check WuX convo
+// TODO: grow up, grow down. Check WuX convo
 
 #define KERNELSPACE_START 0xFFFF'8000'0000'0000
 #define KERNELSPACE_END (UINT64_MAX - PAGE_SIZE)
@@ -79,7 +80,9 @@ void* vm_map_anon(vm_address_space_t* as, void* hint, size_t length, size_t alig
 void* vm_map_direct(vm_address_space_t* as, void* hint, size_t length, size_t align, uintptr_t paddr, vm_prot_t prot, vm_caching_t caching, uint64_t flags);
 void vm_unmap([[maybe_unused]] vm_address_space_t* as, [[maybe_unused]] void* base, [[maybe_unused]] size_t length);
 void vm_protect(vm_address_space_t* as, void* base, size_t length, vm_prot_t prot);
+void vm_tlb_maybe_flush_local(void);
 
 void vm_load_as(vm_address_space_t* as);
 
 void vm_init();
+void vm_ap_init();

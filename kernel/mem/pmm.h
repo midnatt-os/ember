@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stddef.h>
 #include <stdint.h>
 
 #define PMM_DEFAULT 0
@@ -8,3 +9,4 @@
 uintptr_t pmm_alloc(uint64_t flags);
 void pmm_free(uintptr_t ptr);
 void pmm_init();
+uintptr_t pmm_early_alloc(size_t pages);

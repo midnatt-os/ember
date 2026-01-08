@@ -1,5 +1,6 @@
 #include "common/log.h"
 #include "common/panic.h"
+#include "common/stack_trace.h"
 
 #include <stdint.h>
 
@@ -242,6 +243,8 @@ void __ubsan_handle_type_mismatch_v1(data_type_mismatch_t* data, void* pointer) 
     } else {
         logln(LOG_WARN, "UBSAN", "type_mismatch @ %s:%u:%u (%s address %#lx, not enough spce for type %s)", data->location.filename, data->location.line, data->location.column, kind_strs[data->type_check_kind], (uintptr_t) pointer, data->type->name);
     }
+
+    log_stack_trace();
 }
 
 void __ubsan_handle_alignment_assumption(data_alignment_assumption_t* data, void*, void*, void*) {

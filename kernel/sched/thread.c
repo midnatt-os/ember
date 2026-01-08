@@ -58,6 +58,7 @@ void thread_destroy(thread_t* thread) {
 
         ptm_unmap(&global_as, va, PAGE_SIZE);
         invlpg(va);
+        page_ref_dec(pa);
         pmm_free(pa);
         }*/
     slab_free(thread_cache, thread);
@@ -69,6 +70,8 @@ thread_t* thread_create_kernel(char* name, void* entry_fn) {
 
     void* stack = vm_map_anon(&global_as, 0, K_THREAD_STACK_SIZE, 0, VM_PROT_RW, VM_CACHING_WRITE_BACK, VM_FLAG_ZERO);
     ASSERT(stack);
+
+    memset(stack, 0xDE, K_THREAD_STACK_SIZE);
 
     kernel_init_stack_t f = {
         .r12 = 0,

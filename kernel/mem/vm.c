@@ -6,6 +6,10 @@
 #include "common/limine_requests.h"
 #include "common/lock/spinlock.h"
 #include "common/log.h"
+#include "cpu/cpu.h"
+#include "cpu/interrupts.h"
+#include "cpu/lapic.h"
+#include "cpu/msr.h"
 #include "lib/container.h"
 #include "lib/list.h"
 #include "lib/rb.h"
@@ -33,8 +37,65 @@ vm_address_space_t global_as = {};
 list_t region_pool = LIST_NEW;
 spinlock_t region_pool_lock = SPINLOCK_NEW;
 
+static uint64_t tlb_global_gen = 1;
+static int16_t tlb_shootdown_vec = -1;
+
 static rb_value_t region_rb_value(const rb_node_t* n) {
     return CONTAINER_OF(n, vm_region_t, rb_node)->base;
+}
+
+static cpu_t* current_cpu_safe(void) {
+    if (!cpus)
+        return nullptr;
+
+    uint64_t gs_base = msr_read(MSR_GS_BASE);
+    if (gs_base == 0)
+        return nullptr;
+
+    cpu_t* cpu = (cpu_t*) gs_base;
+    if (cpu->self != cpu)
+        return nullptr;
+
+    return cpu;
+}
+
+static void tlb_flush_local(uint64_t gen) {
+    cr3_write(cr3_read()); // flush local TLB
+    cpu_t* cpu = current_cpu_safe();
+    if (cpu)
+        cpu->tlb_gen = gen;
+}
+
+void vm_tlb_maybe_flush_local(void) {
+    cpu_t* cpu = current_cpu_safe();
+    if (!cpu)
+        return;
+
+    uint64_t global = __atomic_load_n(&tlb_global_gen, __ATOMIC_ACQUIRE);
+    if (cpu->tlb_gen != global)
+        tlb_flush_local(global);
+}
+
+static void tlb_ipi_handler([[maybe_unused]] interrupt_frame_t* frame) {
+    tlb_flush_local(__atomic_load_n(&tlb_global_gen, __ATOMIC_RELAXED));
+    lapic_eoi();
+}
+
+static void tlb_register_ipi_handler(void) {
+    if (tlb_shootdown_vec >= 0)
+        interrupts_set_handler((uint8_t) tlb_shootdown_vec, tlb_ipi_handler);
+}
+
+static void tlb_shootdown_all_cpus(void) {
+    uint64_t cpu_count = __atomic_load_n(&cpu_online_count, __ATOMIC_ACQUIRE);
+    uint64_t new_gen = __atomic_fetch_add(&tlb_global_gen, 1, __ATOMIC_SEQ_CST) + 1;
+
+    tlb_flush_local(new_gen);
+
+    if (cpu_count <= 1 || tlb_shootdown_vec < 0)
+        return;
+
+    lapic_broadcast_ipi((uint8_t) tlb_shootdown_vec, LAPIC_DM_FIXED, false);
 }
 
 static bool regions_mergeable(vm_region_t* a, vm_region_t* b) {
@@ -68,6 +129,10 @@ static bool regions_mergeable(vm_region_t* a, vm_region_t* b) {
  * uintptr_t* addr - If it isn't 0, use it as a hint.
  * bool fixed - hint is absolute. If set, treat addr == 0 as an actual hint.
  */
+static uintptr_t align_address(uintptr_t value, size_t align) {
+    return ALIGN_UP(value, align);
+}
+
 static bool find_space(vm_address_space_t* as, size_t length, uintptr_t* addr, bool fixed, size_t align) {
     rb_tree_t* t = &as->regions;
     const uintptr_t lo = as->lower_bound;
@@ -87,7 +152,7 @@ static bool find_space(vm_address_space_t* as, size_t length, uintptr_t* addr, b
         if (!fixed && hint < lo)
             hint = lo;
 
-        uintptr_t start = fixed ? hint : ALIGN_UP(hint, align);
+        uintptr_t start = fixed ? hint : align_address(hint, align);
         if (fixed && (start % align) != 0)
             return false;
 
@@ -134,7 +199,7 @@ static bool find_space(vm_address_space_t* as, size_t length, uintptr_t* addr, b
     for (; it != t->nil; it = rb_successor(t, it)) {
         vm_region_t* r = CONTAINER_OF(it, vm_region_t, rb_node);
 
-        uintptr_t start = ALIGN_UP(prev_end, align);
+        uintptr_t start = align_address(prev_end, align);
         uintptr_t end = start + length;
 
         if ((!hi || start <= hi - length) && (end <= r->base) && (start >= prev_end)) {
@@ -150,7 +215,7 @@ static bool find_space(vm_address_space_t* as, size_t length, uintptr_t* addr, b
     }
 
     // 3) Tail
-    uintptr_t start = ALIGN_UP(prev_end, align);
+    uintptr_t start = align_address(prev_end, align);
     if (!hi || start <= hi - length) {
         *addr = start;
         return true;
@@ -268,6 +333,13 @@ vm_region_t* region_alloc() {
     return r;
 }
 
+static void region_update_direct_phys(vm_region_t* region, uintptr_t orig_base, uintptr_t orig_phys_base) {
+    if (region->type != VM_REGION_TYPE_DIRECT)
+        return;
+    uintptr_t new_base = region->base;
+    region->type_data.direct.phys_addr = orig_phys_base + (new_base - orig_base);
+}
+
 static vm_region_t* region_extract_range(vm_address_space_t* as, vm_region_t* region, uintptr_t start, size_t length) {
     const uintptr_t orig_base = region->base;
     const uintptr_t orig_end = region->base + region->length;
@@ -287,6 +359,7 @@ static vm_region_t* region_extract_range(vm_address_space_t* as, vm_region_t* re
 
     // Left part: [orig_base, start)
     if (start > orig_base) {
+        region->as = as;
         region->base = orig_base;
         region->length = start - orig_base;
         region->type = type;
@@ -297,6 +370,7 @@ static vm_region_t* region_extract_range(vm_address_space_t* as, vm_region_t* re
             region->type_data.anon.zeroed = zeroed;
         else
             region->type_data.direct.phys_addr = phys_base;
+        region_update_direct_phys(region, orig_base, phys_base);
         region_insert(as, region);
     }
 
@@ -317,8 +391,9 @@ static vm_region_t* region_extract_range(vm_address_space_t* as, vm_region_t* re
     if (type == VM_REGION_TYPE_ANON) {
         target->type_data.anon.zeroed = zeroed;
     } else {
-        target->type_data.direct.phys_addr = phys_base + (start - orig_base);
+        target->type_data.direct.phys_addr = phys_base;
     }
+    region_update_direct_phys(target, orig_base, phys_base);
 
     // Tail: [target_end, orig_end)
     if (target_end < orig_end) {
@@ -333,8 +408,9 @@ static vm_region_t* region_extract_range(vm_address_space_t* as, vm_region_t* re
         if (type == VM_REGION_TYPE_ANON) {
             tail->type_data.anon.zeroed = zeroed;
         } else {
-            tail->type_data.direct.phys_addr = phys_base + (target_end - orig_base);
+            tail->type_data.direct.phys_addr = phys_base;
         }
+        region_update_direct_phys(tail, orig_base, phys_base);
         region_insert(as, tail);
     }
 
@@ -345,15 +421,20 @@ static vm_region_t* region_extract_range(vm_address_space_t* as, vm_region_t* re
 static void region_map(vm_region_t* region, uintptr_t address, uintptr_t length) {
     ASSERT(address % PAGE_SIZE == 0 && length % PAGE_SIZE == 0);
 
+    uintptr_t map_base = region->base;
+    size_t map_length = region->length;
+    if (map_length == 0)
+        return;
+
     switch (region->type) {
         case VM_REGION_TYPE_ANON:
-            for (size_t i = 0; i < length; i += PAGE_SIZE) {
-                uintptr_t virt = address + i;
+            for (size_t i = 0; i < map_length; i += PAGE_SIZE) {
+                uintptr_t virt = map_base + i;
                 uintptr_t phys = pmm_alloc(region->type_data.anon.zeroed ? PMM_ZERO : PMM_DEFAULT);
                 ptm_map(region->as, virt, phys, PAGE_SIZE, region->prot, region->caching);
             }
             break;
-        case VM_REGION_TYPE_DIRECT: ptm_map(region->as, address, region->type_data.direct.phys_addr + (address - region->base), length, region->prot, region->caching); break;
+        case VM_REGION_TYPE_DIRECT: ptm_map(region->as, map_base, region->type_data.direct.phys_addr, map_length, region->prot, region->caching); break;
     }
 }
 
@@ -423,10 +504,14 @@ void vm_unmap(vm_address_space_t* as, void* base, size_t length) {
             break;
         }
 
-        uintptr_t region_end = region->base + region->length;
-        size_t chunk = region_end - addr;
-        if (chunk > remaining)
-            chunk = remaining;
+        uintptr_t region_start = region->base;
+        size_t region_length = region->length;
+        ASSERT(addr >= region_start);
+        ASSERT(addr < region_start + region_length);
+
+        size_t offset = addr - region_start;
+        size_t available = region_length - offset;
+        size_t chunk = remaining < available ? remaining : available;
 
         vm_region_t* target = region_extract_range(as, region, addr, chunk);
         ASSERT(target);
@@ -434,9 +519,10 @@ void vm_unmap(vm_address_space_t* as, void* base, size_t length) {
 
         size_t target_len = target->length;
         vm_region_type_t type = target->type;
+        uintptr_t unmap_base = target->base;
 
         for (size_t off = 0; off < target_len; off += PAGE_SIZE) {
-            uintptr_t va = addr + off;
+            uintptr_t va = unmap_base + off;
 
             uintptr_t pa = ptm_virt_to_phys(as, va);
             if (!pa) {
@@ -449,17 +535,23 @@ void vm_unmap(vm_address_space_t* as, void* base, size_t length) {
             invlpg(va);
 
             if (type == VM_REGION_TYPE_ANON) {
-                pmm_free(pa);
+                uint32_t refs = page_ref_dec(pa);
+                if (refs == 0) {
+                    pmm_free(pa);
+                } else {
+                    logln(LOG_WARN, "VM", "vm_unmap: pa=%#lx still has %u refs after unmap", pa, refs);
+                }
             }
         }
 
         region_free(target);
 
-        addr += target_len;
-        remaining -= target_len;
+        addr += chunk;
+        remaining -= chunk;
     }
 
     spinlock_unlock(&as->lock, prev);
+    tlb_shootdown_all_cpus();
 }
 
 void vm_protect(vm_address_space_t* as, void* base, size_t length, vm_prot_t prot) {
@@ -516,6 +608,7 @@ void vm_protect(vm_address_space_t* as, void* base, size_t length, vm_prot_t pro
     }
 
     spinlock_unlock(&as->lock, prev);
+    tlb_shootdown_all_cpus();
 }
 
 void vm_load_as(vm_address_space_t* as) {
@@ -534,6 +627,10 @@ void vm_init() {
     uint64_t* pml4 = (uint64_t*) HHDM(global_as.cr3);
     for (size_t i = 256; i < 512; i++)
         pml4[i] = (pmm_alloc(PMM_ZERO) & 0x000F'FFFF'FFFF'F000) | (1 << 1) | (1 << 0);
+
+    tlb_shootdown_vec = interrupts_request_vector(tlb_ipi_handler);
+    ASSERT(tlb_shootdown_vec >= 0);
+    tlb_register_ipi_handler();
 
     struct limine_executable_address_response* kernel_addr = executable_address_request.response;
 
@@ -598,7 +695,17 @@ void vm_init() {
         region_insert(&global_as, r);
     }
 
+    // Keep dynamic allocations away from the HHDM window so we never place anon
+    // mappings into gaps inside the direct-map range.
+    uintptr_t hhdm_limit = hhdm_request.response->offset + page_db_max_phys;
+    if (hhdm_limit > global_as.lower_bound && hhdm_limit < global_as.upper_bound)
+        global_as.lower_bound = hhdm_limit;
+
     vm_load_as(&global_as);
 
     logln(LOG_INFO, "VM", "Initialized");
+}
+
+void vm_ap_init() {
+    tlb_register_ipi_handler();
 }

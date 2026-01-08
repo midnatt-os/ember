@@ -6,6 +6,7 @@
 #include "common/panic.h"
 #include "cpu/cpu.h"
 #include "cpu/gdt.h"
+#include "mem/vm.h"
 #include "sched/sched.h"
 #include "sched/thread.h"
 #include "stdatomic.h"
@@ -38,6 +39,8 @@ static spinlock_t handler_lock = SPINLOCK_NEW;
 static interrupt_handler_t int_handlers[IDT_SIZE];
 
 void common_int_handler(interrupt_frame_t* frame) {
+    vm_tlb_maybe_flush_local();
+
     bool prev = spinlock_lock(&handler_lock);
     interrupt_handler_t handler = int_handlers[frame->vector];
     spinlock_unlock(&handler_lock, prev);
