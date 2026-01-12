@@ -166,6 +166,7 @@ void log_init() {
         1,
         0,
         0,
-        0
+        0,
+        FLANTERM_FB_ROTATE_0
     );
 }
