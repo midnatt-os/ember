@@ -22,7 +22,7 @@ typedef struct [[gnu::packed]] {
     uint64_t base;
 } idtr_t;
 
-typedef struct [[gnu::packed]] {
+typedef struct {
     uint16_t low_offset;
     uint16_t segment_selector;
     uint8_t ist;

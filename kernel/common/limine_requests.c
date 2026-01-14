@@ -1,5 +1,6 @@
 #include "common/limine_requests.h"
 
+#include "common/log.h"
 #include "lib/string.h"
 #include "limine.h"
 

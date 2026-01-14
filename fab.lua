@@ -139,17 +139,15 @@ local objs = generate(
 local linker_script = fab.def_source("support/link_ember.ld")
 local kernel = linker:link("ember", objs, linker_flags, linker_script)
 
--- Build Modules
-local module_installs = {}
+local installs = {}
 for name, source in pairs(modules) do
     local obj = cc:compile_object(name .. ".o", source, include_dirs, module_c_flags)
     local mod = linker:link(name, { obj }, { "-shared", "-nostdlib", "-z,now", "-z,relro", "-z,nocopyreloc" })
-    module_installs["modules/" .. name .. ".mod"] = mod
+    installs["modules/" .. name .. ".mod"] = mod
 end
 
+installs["bin/ember"] = kernel
+
 return {
-    install = {
-        ["bin/ember"] = kernel,
-        table.unpack(module_installs)
-    }
+    install = installs
 }

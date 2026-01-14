@@ -108,6 +108,8 @@ ISR 31, 0
 
 ; ISR stubs table
 section .rodata
+    align 8
+
 %macro ISR_ARR 1
     dq isr_%1
 %endmacro
