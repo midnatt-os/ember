@@ -127,8 +127,6 @@ void pf_handler(interrupt_frame_t* frame) {
         '\0',
     };
 
-    thread_t* thread = CPU_CURRENT->scheduler.current_thread;
-    log_raw("%s, base: %#p, size: %#p\n", thread->name, thread->kstack_base, thread->kstack_size);
     panic("-- PAGE FAULT --\ncr2=%#p ERR=%#lx [%s]\nrsp=%#p\nrip=%#p\n", cr2_read(), err, flags, frame->rsp, frame->rip);
 }
 

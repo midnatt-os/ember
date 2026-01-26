@@ -28,6 +28,7 @@ typedef struct {
     size_t kstack_size;
 
     timer_t sleep_timer;
+    list_node_t wq_node;
 } thread_t;
 
 extern object_cache_t* thread_cache;

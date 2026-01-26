@@ -18,6 +18,8 @@ typedef struct {
     timer_t preempt_timer;
 } scheduler_t;
 
+thread_t* sched_get_current_thread();
+
 void sched_yield(thread_status_t target_status);
 void sched_sleep(uint64_t duration);
 void sched_wake_thread(void* thread);

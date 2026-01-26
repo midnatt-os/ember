@@ -1,6 +1,7 @@
 #include "common/asm.h"
 #include "common/assert.h"
 #include "common/limine_requests.h"
+#include "common/lock/mutex.h"
 #include "common/lock/spinlock.h"
 #include "common/log.h"
 #include "common/panic.h"
@@ -13,8 +14,11 @@
 #include "cpu/pat.h"
 #include "cpu/tsc.h"
 #include "dev/hpet.h"
+#include "fs/impl/tmpfs.h"
+#include "fs/vfs.h"
 #include "lib/container.h"
 #include "lib/elf.h"
+#include "lib/hashmap.h"
 #include "lib/mem.h"
 #include "lib/rb.h"
 #include "limine.h"
@@ -28,10 +32,12 @@
 #include "sched/sched.h"
 #include "sched/thread.h"
 #include "sys/acpi.h"
+#include "sys/initrd.h"
 #include "sys/modules.h"
 #include "sys/time.h"
 #include "sys/timers.h"
 
+#include <common/errno.h>
 #include <stdatomic.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -120,6 +126,15 @@ void ap_init([[maybe_unused]] struct limine_mp_info* cpu_info) {
     lapic_bsp_init();
 
     timer_init_cpu();
+
+    vfs_init();
+    tmpfs_init();
+    vfs_mount("tmpfs", "/");
+
+    struct limine_file* initrd_file = find_limine_module("initrd.cpio");
+    ASSERT(initrd_file);
+    initrd_unpack(initrd_file->address, initrd_file->size);
+
     cpu_online_count = 1;
 
     thread_cache = slab_create_cache("thread", sizeof(thread_t), PAGE_SIZE);

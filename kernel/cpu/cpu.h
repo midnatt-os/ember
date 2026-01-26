@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common/lock/spinlock.h"
 #include "lib/rb.h"
 #include "sched/sched.h"
 #include "sys/timers.h"
@@ -16,6 +17,7 @@ typedef struct cpu {
     uint64_t tlb_gen;
 
     timer_queue_t timer_queue;
+    spinlock_t sched_lock;
     scheduler_t scheduler;
 } cpu_t;
 

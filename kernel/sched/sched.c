@@ -3,6 +3,7 @@
 #include "common/asm.h"
 #include "common/assert.h"
 #include "common/limine_requests.h"
+#include "common/lock/mutex.h"
 #include "common/lock/spinlock.h"
 #include "common/log.h"
 #include "cpu/cpu.h"
@@ -62,6 +63,10 @@ static void preempt_callback(void* _) {
     SCHED.need_resched = true;
 }
 
+thread_t* sched_get_current_thread() {
+    return SCHED.current_thread;
+}
+
 void sched_schedule_thread(thread_t* thread) {
     ASSERT(thread->cpu_id == CPU_CURRENT->seq_id);
 
@@ -102,32 +107,6 @@ static thread_t* pick_next_thread() {
 }
 
 static void switch_threads(thread_t* this, thread_t* next) {
-    if (!(*((uintptr_t*) (next->rsp + 6 * sizeof(uintptr_t))))) {
-        logln(LOG_WARN, "", "");
-        log_raw("ERROR: Invalid return address for next thread!\n");
-        log_raw("Thread Name: %s, stack base %#p, stack size %#p, Status: %lu, Stack Pointer: %p, Return Address: %p\n", next->name, next->kstack_base, next->kstack_size, next->status, next->rsp, *((uintptr_t*) (next->rsp + 6 * sizeof(uintptr_t))));
-
-        log_raw("Full stack dump for %s (base=%#p size=%zu bytes, rsp=%#p):\n", next->name, next->kstack_base, next->kstack_size, next->rsp);
-        uintptr_t* stack_words = (uintptr_t*) next->kstack_base;
-        size_t word_count = next->kstack_size / sizeof(uintptr_t);
-        for (size_t i = 0; i < word_count; i++) {
-            uintptr_t addr = (uintptr_t) (stack_words + i);
-            uintptr_t value = stack_words[i];
-            const char* marker = (addr == next->rsp) ? " <rsp>" : "";
-            log_raw("  [%04zu] %#018lx: %#018lx%s\n", i, (unsigned long) addr, (unsigned long) value, marker);
-        }
-
-        log_raw("Current Thread Name: %s, Status: %lu, Stack Pointer: %p, Return Address: %p\n", this->name, this->status, this->rsp, *((uintptr_t*) (this->rsp + 6 * sizeof(uintptr_t))));
-
-        log_raw("Stack page mappings for %s:\n", next->name);
-        for (size_t off = 0; off < next->kstack_size; off += PAGE_SIZE) {
-            uintptr_t va = (uintptr_t) next->kstack_base + off;
-            uintptr_t pa = ptm_virt_to_phys(&global_as, va);
-            uint32_t refs = pa ? page_ref_get(pa) : 0;
-            log_raw("  page %zu: va=%#p pa=%#p refs=%u\n", off / PAGE_SIZE, (void*) va, (void*) pa, refs);
-        }
-    }
-
     [[maybe_unused]] thread_t* old = sched_context_switch(this, next);
 }
 
@@ -223,13 +202,6 @@ void sched_init_cpu() {
         .need_resched = false,
         .preempt_timer = timer_create(preempt_callback, nullptr),
     };
-
-    module_t fireworks;
-    struct limine_file* fw_lim = find_limine_module("firework_test.mod");
-    ASSERT(fw_lim);
-    module_load(fw_lim->address, fw_lim->size, &fireworks);
-
-    fireworks.init();
 
     if (CPU_CURRENT->seq_id == 0) {
         thread_t* mem_info_thread = thread_create_kernel("mem_usage", mem_info);
