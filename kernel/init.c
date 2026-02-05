@@ -1,3 +1,4 @@
+#include "common/align.h"
 #include "common/asm.h"
 #include "common/assert.h"
 #include "common/limine_requests.h"
@@ -7,13 +8,17 @@
 #include "common/panic.h"
 #include "common/stack_trace.h"
 #include "cpu/cpu.h"
+#include "cpu/fpu.h"
 #include "cpu/gdt.h"
 #include "cpu/interrupts.h"
 #include "cpu/lapic.h"
 #include "cpu/msr.h"
 #include "cpu/pat.h"
+#include "cpu/syscall.h"
 #include "cpu/tsc.h"
+#include "cpu/tss.h"
 #include "dev/hpet.h"
+#include "fs/impl/devfs.h"
 #include "fs/impl/tmpfs.h"
 #include "fs/vfs.h"
 #include "lib/container.h"
@@ -29,6 +34,7 @@
 #include "mem/ptm.h"
 #include "mem/slab.h"
 #include "mem/vm.h"
+#include "sched/proc.h"
 #include "sched/sched.h"
 #include "sched/thread.h"
 #include "sys/acpi.h"
@@ -59,14 +65,20 @@ void ap_init([[maybe_unused]] struct limine_mp_info* cpu_info) {
     pat_enable();
     vm_load_as(&global_as);
     vm_ap_init();
+    fpu_init_core();
 
     cpu_t* cpu = &cpus[cpu_info->extra_argument];
     msr_write(MSR_GS_BASE, (uint64_t) cpu);
+
+    tss_t* tss = heap_alloc(sizeof(tss_t));
+    *tss = (tss_t) {};
+    gdt_load_tss(tss);
 
     *cpu = (cpu_t) {
         .self = cpu,
         .seq_id = cpu_info->extra_argument,
         .lapic_id = cpu_info->lapic_id,
+        .tss = tss,
     };
 
     logln(LOG_INFO, "SMP", "CPU%lu online", cpu->seq_id);
@@ -110,10 +122,16 @@ void ap_init([[maybe_unused]] struct limine_mp_info* cpu_info) {
         struct limine_mp_info* cpu_info = mp->cpus[i];
         if (cpu_info->lapic_id == mp->bsp_lapic_id) {
             msr_write(MSR_GS_BASE, (uint64_t) &cpus[i]);
+
+            tss_t* tss = heap_alloc(sizeof(tss_t));
+            *tss = (tss_t) {};
+            gdt_load_tss(tss);
+
             cpus[i] = (cpu_t) {
                 .self = &cpus[i],
                 .seq_id = i,
                 .lapic_id = cpu_info->lapic_id,
+                .tss = tss,
             };
 
             continue;
@@ -127,9 +145,15 @@ void ap_init([[maybe_unused]] struct limine_mp_info* cpu_info) {
 
     timer_init_cpu();
 
+    file_init();
+    fd_init();
     vfs_init();
     tmpfs_init();
-    vfs_mount("tmpfs", "/");
+    devfs_init();
+
+    ASSERT(vfs_mount("tmpfs", "/") == 0);
+    ASSERT(vfs_mkdir(ABS_PATH("/dev")) == 0);
+    ASSERT(vfs_mount("devfs", "/dev") == 0);
 
     struct limine_file* initrd_file = find_limine_module("initrd.cpio");
     ASSERT(initrd_file);
@@ -138,8 +162,16 @@ void ap_init([[maybe_unused]] struct limine_mp_info* cpu_info) {
     cpu_online_count = 1;
 
     thread_cache = slab_create_cache("thread", sizeof(thread_t), PAGE_SIZE);
+    fpu_init_features();
+    fpu_init_core();
+    fpu_state_cache = slab_create_cache("fpu", g_fpu_area_size, 4 * PAGE_SIZE);
 
     atomic_store_explicit(&aps_release_barrier, true, memory_order_release);
+
+    syscall_init();
+
+    proc_init();
+
     sched_init_cpu();
 
     while (true)

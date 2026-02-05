@@ -109,6 +109,28 @@ void gpf_handler(interrupt_frame_t* frame) {
     panic("-- GENERAL PROTECTION FAULT --\nrip=%#p\nrsp=%#p", frame->rip, frame->rsp);
 }
 
+void ud_handler(interrupt_frame_t* frame) {
+    log_raw(
+        "rax=%#lx rcx=%#lx rdx=%#lx rsi=%#lx rdi=%#lx rbx=%#lx rbp=%#lx\n" "r8 =%#lx r9 =%#lx r10=%#lx r11=%#lx r12=%#lx r13=%#lx r14=%#lx r15=%#lx\n",
+        frame->rax,
+        frame->rcx,
+        frame->rdx,
+        frame->rsi,
+        frame->rdi,
+        frame->rbx,
+        frame->rbp,
+        frame->r8,
+        frame->r9,
+        frame->r10,
+        frame->r11,
+        frame->r12,
+        frame->r13,
+        frame->r14,
+        frame->r15
+    );
+    panic("-- INVALID OPCODE (#UD) --\nrip=%#p\nrsp=%#p", frame->rip, frame->rsp);
+}
+
 static inline char flag(uint64_t err, uint64_t bit, char c) {
     return (err & bit) ? c : '-';
 }
@@ -156,6 +178,7 @@ void interrupts_init() {
     interrupts_load_idt();
 
     int_handlers[0x2] = panic_ipi_handler;
+    int_handlers[0x06] = ud_handler;
     int_handlers[0xC] = ss_handler;
     int_handlers[0xD] = gpf_handler;
     int_handlers[0xE] = pf_handler;

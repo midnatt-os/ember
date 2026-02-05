@@ -14,7 +14,7 @@
 #include <stdint.h>
 
 
-#define PMM_POISON_WORD 0xDEADBEEFDEADBEEFULL
+#define PMM_POISON_WORD 0
 
 static spinlock_t pmm_lock = SPINLOCK_NEW;
 

@@ -136,6 +136,21 @@ static ssize_t tmpfs_read(vnode_t* file, void* buffer, size_t count, off_t offse
     return bytes_to_read;
 }
 
+// ... existing code ...
+
+static int tmpfs_getattr(vnode_t* node, stat_t* out) {
+    tmpfs_node_t* n = (tmpfs_node_t*) node->private;
+
+    memset(out, 0, sizeof(stat_t));
+
+    if (node->type == V_DIR)
+        out->size = 4096;
+    else
+        out->size = n->file.size;
+
+    return 0;
+}
+
 static int tmpfs_unmount(mount_t* _) {
     logln(LOG_WARN, "TMPFS", "unmount stubbed");
     return -1;
@@ -163,6 +178,7 @@ static vnode_ops_t tmpfs_vnode_ops = {
     .create = tmpfs_create,
     .mkdir = tmpfs_mkdir,
     .read = tmpfs_read,
+    .getattr = tmpfs_getattr,
 };
 
 static mount_ops_t tmpfs_ops = {

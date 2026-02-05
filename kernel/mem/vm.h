@@ -37,6 +37,33 @@ typedef struct {
     bool execute;
 } vm_prot_t;
 
+// vm.h
+#include <stdbool.h>
+#include <stdint.h>
+
+#define PROT_READ 0x01
+#define PROT_WRITE 0x02
+#define PROT_EXEC 0x04
+
+#define MAP_SHARED 0x01
+#define MAP_PRIVATE 0x02
+#define MAP_FIXED 0x10
+#define MAP_ANON 0x20
+#define MAP_FIXED_NOREPLACE 0x100000
+#define MAP_ANONYMOUS MAP_ANON
+#define MAP_NORESERVE 0x4000
+
+#define KNOWN_PROT (PROT_READ | PROT_WRITE | PROT_EXEC)
+#define KNOWN_FLAGS (MAP_SHARED | MAP_PRIVATE | MAP_FIXED | MAP_ANONYMOUS | MAP_NORESERVE | MAP_FIXED_NOREPLACE)
+
+static inline vm_prot_t libc_to_vm_prot(int prot_flags) {
+    return (vm_prot_t) {
+        .read = (prot_flags & PROT_READ) != 0,
+        .write = (prot_flags & PROT_WRITE) != 0,
+        .execute = (prot_flags & PROT_EXEC) != 0,
+    };
+}
+
 typedef enum {
     VM_CACHING_WRITE_BACK,
     VM_CACHING_WRITE_THROUGH,
@@ -83,6 +110,8 @@ void vm_protect(vm_address_space_t* as, void* base, size_t length, vm_prot_t pro
 void vm_tlb_maybe_flush_local(void);
 
 void vm_load_as(vm_address_space_t* as);
+vm_address_space_t* vm_new_address_space();
+size_t vm_copy_to(vm_address_space_t* as, uintptr_t dest_vaddr, const void* src, size_t length);
 
 void vm_init();
 void vm_ap_init();

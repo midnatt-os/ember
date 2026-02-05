@@ -62,23 +62,17 @@ static inline bool is_slash(char c) {
     return c == '/';
 }
 
-// We only need one index tracking variable now
 const char* extract_component(const char* path, uint64_t* cursor) {
-    // 1. Skip leading slashes
     while (path[*cursor] == '/') {
         (*cursor)++;
     }
 
-    // 2. Check for End of String
-    // If path was "/", we are now at '\0' and return NULL.
     if (path[*cursor] == '\0') {
         return nullptr;
     }
 
-    // 3. Mark the start of the actual name
     uint64_t start = *cursor;
 
-    // 4. Find the end of this component
     while (path[*cursor] != '/' && path[*cursor] != '\0') {
         (*cursor)++;
     }
@@ -86,7 +80,6 @@ const char* extract_component(const char* path, uint64_t* cursor) {
     uint64_t end = *cursor;
     uint64_t len = end - start;
 
-    // 5. Allocate and Copy
     char* component = heap_alloc(len + 1);
     memcpy(component, path + start, len);
     component[len] = '\0';
@@ -94,23 +87,15 @@ const char* extract_component(const char* path, uint64_t* cursor) {
     return component;
 }
 
-// Helper to check if a vnode is the root of its specific mount structure
 static bool is_mount_root(vnode_t* vn) {
     if (!vn || !vn->mount)
         return false;
-    // If the vnode's list of mounted filesystems points to itself via root ops
-    // OR more simply: checking if the mount structure's root vnode is this vnode.
-    // However, usually we need to ask the filesystem or check cached state.
-    // Based on your struct:
-    // vnode->mount points to the mount_t this vnode belongs to.
-    // mount_t->root points to the root vnode of that fs.
     return vn->mount->root == vn;
 }
 
 int vfs_lookup(path_t path, vnode_t** result) {
     vnode_t* current_vnode;
 
-    // 1. Resolve Start Node
     if (!path.base || is_slash(path.path[0])) {
         current_vnode = vfs_get_root();
         if (!current_vnode)
@@ -119,31 +104,24 @@ int vfs_lookup(path_t path, vnode_t** result) {
         current_vnode = path.base;
     }
 
-    // 2. Setup Loop Variables
     uint64_t cursor = 0;
     const char* name = nullptr;
 
-    // 3. Iterate using the new single-cursor helper
-    // If path is "/", extract_component returns NULL immediately.
     while ((name = extract_component(path.path, &cursor)) != nullptr) {
-        // Handle "." (Current Directory)
         if (strcmp(name, ".") == 0) {
             heap_free((void*) name, strlen(name) + 1);
             continue;
         }
 
-        // Handle ".." (Parent Directory)
         if (strcmp(name, "..") == 0) {
             if (is_mount_root(current_vnode)) {
                 if (current_vnode->mount->covered_vnode) {
                     current_vnode = current_vnode->mount->covered_vnode;
                 } else {
-                    // Global root .. stays at global root
                     heap_free((void*) name, strlen(name) + 1);
                     continue;
                 }
             }
-            // Fall through to normal lookup for ".."
         }
 
         if (current_vnode->type != V_DIR) {
@@ -151,7 +129,6 @@ int vfs_lookup(path_t path, vnode_t** result) {
             return -ENOTDIR;
         }
 
-        // 4. Perform the Lookup
         vnode_t* next_vnode = nullptr;
         int err = current_vnode->ops->lookup(current_vnode, name, &next_vnode);
 
@@ -160,7 +137,6 @@ int vfs_lookup(path_t path, vnode_t** result) {
         if (err != 0)
             return err;
 
-        // 5. Handle Mount Crossing
         while (next_vnode->covering_mount) {
             vnode_t* mounted_root = next_vnode->covering_mount->root;
             if (!mounted_root)
@@ -176,7 +152,7 @@ int vfs_lookup(path_t path, vnode_t** result) {
 }
 
 static char* str_rchr(const char* s, int c) {
-    const char* last = NULL;
+    const char* last = nullptr;
     while (*s) {
         if (*s == c)
             last = s;
@@ -189,7 +165,6 @@ int vfs_create(path_t path) {
     if (!path.path)
         return -EINVAL;
 
-    // 1. Copy the path so we can modify it (to split string)
     size_t path_len = strlen(path.path);
     char* buf = heap_alloc(path_len + 1);
     if (!buf)
@@ -200,22 +175,12 @@ int vfs_create(path_t path) {
     char* filename = nullptr;
     vnode_t* parent_dir = nullptr;
 
-    // 2. Split into Directory and Filename
     if (last_slash) {
-        // CASE A: Path contains slashes (e.g. "/tmp/file" or "dir/file")
-        *last_slash = '\0'; // Cut string at the slash
+        *last_slash = '\0';
         filename = last_slash + 1;
 
-        // If path was "/file", parent path is "" (empty).
-        // If path was "/tmp/file", parent path is "/tmp".
 
-        // Use existing path logic, but point to our modified buffer
         path_t dir_path = { .base = path.base, .path = buf };
-
-        // Handle absolute path edge case: "/file" -> parent is "/"
-        // vfs_lookup handles "" by returning the base/root, so this works.
-        // However, if it was ABS_PATH("/file"), base is NULL.
-        // vfs_lookup(NULL, "") -> vfs_root. Correct.
 
         int err = vfs_lookup(dir_path, &parent_dir);
         if (err) {
@@ -223,19 +188,15 @@ int vfs_create(path_t path) {
             return err;
         }
     } else {
-        // CASE B: No slashes (e.g. "file.txt")
         filename = buf;
 
-        // Parent is simply the base of the lookup
         if (path.base) {
             parent_dir = path.base;
         } else {
-            // If ABS_PATH("file.txt") was passed, implies root
             parent_dir = vfs_get_root();
         }
     }
 
-    // 3. Validation
     if (!parent_dir) {
         heap_free(buf, path_len + 1);
         return -ENOENT;
@@ -247,12 +208,10 @@ int vfs_create(path_t path) {
     }
 
     if (strlen(filename) == 0) {
-        // Path ended in slash? (e.g. "/tmp/")
         heap_free(buf, path_len + 1);
-        return -EISDIR; // Cannot create a directory via vfs_create
+        return -EISDIR;
     }
 
-    // 4. Delegate to Filesystem
     int err = parent_dir->ops->create(parent_dir, filename);
 
     heap_free(buf, path_len + 1);
@@ -263,7 +222,6 @@ int vfs_mkdir(path_t path) {
     if (!path.path)
         return -EINVAL;
 
-    // 1. Copy the path so we can modify it
     size_t path_len = strlen(path.path);
     char* buf = heap_alloc(path_len + 1);
     memcpy(buf, path.path, path_len + 1);
@@ -272,9 +230,8 @@ int vfs_mkdir(path_t path) {
     char* dirname = nullptr;
     vnode_t* parent_dir = nullptr;
 
-    // 2. Split into Parent Path and New Directory Name
     if (last_slash) {
-        *last_slash = '\0'; // Cut string at the slash
+        *last_slash = '\0';
         dirname = last_slash + 1;
 
         path_t dir_path = { .base = path.base, .path = buf };
@@ -289,7 +246,6 @@ int vfs_mkdir(path_t path) {
         parent_dir = path.base ? path.base : vfs_get_root();
     }
 
-    // 3. Validation
     if (!parent_dir) {
         heap_free(buf, path_len + 1);
         return -ENOENT;
@@ -302,31 +258,129 @@ int vfs_mkdir(path_t path) {
 
     if (strlen(dirname) == 0) {
         heap_free(buf, path_len + 1);
-        return -EEXIST; // Path was something like "/path/to/"
+        return -EEXIST;
     }
 
-    // 4. Delegate to Filesystem
     int err = parent_dir->ops->mkdir(parent_dir, dirname);
 
     heap_free(buf, path_len + 1);
     return err;
 }
 
-ssize_t vfs_read(vnode_t* file, void* buffer, size_t count, off_t offset) {
-    if (!file || !buffer)
+ssize_t vfs_read(vnode_t* vnode, void* buffer, size_t count, off_t offset) {
+    if (!vnode || !buffer)
         return -EINVAL;
 
-    // You can't read from a directory using standard file read()
-    if (file->type == V_DIR)
+    if (vnode->type == V_DIR)
         return -EISDIR;
 
-    // Check if the filesystem actually supports reading
-    if (!file->ops->read)
+    return vnode->ops->read(vnode, buffer, count, offset);
+}
+
+ssize_t vfs_write(vnode_t* vnode, const void* buffer, size_t count, off_t offset) {
+    if (!vnode || !buffer)
+        return -EINVAL;
+
+    if (vnode->type == V_DIR)
+        return -EISDIR;
+
+    if (!vnode->ops->write)
         return -ENOSYS;
 
-    // Delegate to the specific filesystem (e.g., tmpfs)
-    return file->ops->read(file, buffer, count, offset);
+    return vnode->ops->write(vnode, buffer, count, offset);
 }
+
+int vfs_getattr(vnode_t* node, stat_t* st) {
+    if (!node || !st)
+        return -EINVAL;
+
+    return node->ops->getattr(node, st);
+}
+
+int vfs_symlink(path_t linkpath, const char* target) {
+    if (!linkpath.path || !target)
+        return -EINVAL;
+
+    size_t path_len = strlen(linkpath.path);
+    char* buf = heap_alloc(path_len + 1);
+    if (!buf)
+        return -ENOMEM;
+    memcpy(buf, linkpath.path, path_len + 1);
+
+    char* last_slash = str_rchr(buf, '/');
+    char* name = nullptr;
+    vnode_t* parent_dir = nullptr;
+
+    if (last_slash) {
+        *last_slash = '\0';
+        name = last_slash + 1;
+
+        // Special-case absolute paths like "/foo":
+        // after splitting, buf becomes "" but we want parent to resolve to "/".
+        if (buf[0] == '\0' && linkpath.path[0] == '/') {
+            buf[0] = '/';
+            buf[1] = '\0';
+        }
+
+        path_t dir_path = { .base = linkpath.base, .path = buf };
+        int err = vfs_lookup(dir_path, &parent_dir);
+        if (err) {
+            heap_free(buf, path_len + 1);
+            return err;
+        }
+    } else {
+        name = buf;
+        parent_dir = linkpath.base ? linkpath.base : vfs_get_root();
+    }
+
+    if (!parent_dir) {
+        heap_free(buf, path_len + 1);
+        return -ENOENT;
+    }
+
+    if (parent_dir->type != V_DIR) {
+        heap_free(buf, path_len + 1);
+        return -ENOTDIR;
+    }
+
+    if (!parent_dir->ops || !parent_dir->ops->symlink) {
+        heap_free(buf, path_len + 1);
+        return -ENOSYS;
+    }
+
+    // Path ends with '/' -> empty last component
+    if (strlen(name) == 0) {
+        heap_free(buf, path_len + 1);
+        return -EISDIR;
+    }
+
+    int err = parent_dir->ops->symlink(parent_dir, name, target);
+
+    heap_free(buf, path_len + 1);
+    return err;
+}
+
+
+ssize_t vfs_readlink(vnode_t* link, char* buf, size_t buflen) {
+    /*
+        You’ll almost certainly also want a path-based helper eventually:
+            - lookup with nofollow last component
+            - check it’s V_LNK
+            - call vfs_readlink(vn, ...)
+     */
+    if (!link || !buf)
+        return -EINVAL;
+
+    if (link->type != V_LNK)
+        return -EINVAL;
+
+    if (!link->ops || !link->ops->readlink)
+        return -ENOSYS;
+
+    // POSIX: returns number of bytes placed in buf (not NUL-terminated)
+    return link->ops->readlink(link, buf, buflen);
+}
+
 
 int vfs_mount(const char* fstype_name, const char* target_path) {
     hashmap_node_t* fstype_node = hashmap_find(&fs_types, fstype_name);

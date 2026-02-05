@@ -7,6 +7,8 @@
 #include "common/lock/spinlock.h"
 #include "common/log.h"
 #include "cpu/cpu.h"
+#include "cpu/fpu.h"
+#include "cpu/msr.h"
 #include "cpu/tsc.h"
 #include "flanterm.h"
 #include "lib/container.h"
@@ -16,6 +18,7 @@
 #include "mem/page.h"
 #include "mem/ptm.h"
 #include "mem/slab.h"
+#include "mem/vm.h"
 #include "sched/thread.h"
 #include "sys/modules.h"
 #include "sys/time.h"
@@ -107,6 +110,27 @@ static thread_t* pick_next_thread() {
 }
 
 static void switch_threads(thread_t* this, thread_t* next) {
+    if (next->proc != nullptr)
+        vm_load_as(next->proc->address_space);
+    else
+        vm_load_as(&global_as);
+
+    if (this->proc != nullptr) {
+        fpu_save(this->state.fpu_area);
+    }
+
+    if (next->proc != nullptr) {
+        fpu_restore(next->state.fpu_area);
+    }
+
+    tss_set_rsp0(CPU_CURRENT->tss, (uintptr_t) next->kstack_base + next->kstack_size);
+
+    this->state.gs = msr_read(MSR_GS_KERNEL_BASE);
+    this->state.fs = msr_read(MSR_FS_BASE);
+
+    msr_write(MSR_GS_KERNEL_BASE, next->state.gs);
+    msr_write(MSR_FS_BASE, next->state.fs);
+
     [[maybe_unused]] thread_t* old = sched_context_switch(this, next);
 }
 
@@ -165,6 +189,7 @@ void sched_sleep(uint64_t duration) {
     int_restore(prev_if);
 }
 
+/*
 extern uint64_t pf_total_count;
 extern uint64_t pf_use_count;
 extern struct flanterm_context* ft_ctx;
@@ -175,6 +200,7 @@ static void mem_info(void* _) {
         sched_sleep(s_to_ns(5));
     }
 }
+*/
 
 void sched_init_cpu() {
     char* idle_name_str = heap_alloc(sizeof("idle") + sizeof(char));
@@ -204,8 +230,9 @@ void sched_init_cpu() {
     };
 
     if (CPU_CURRENT->seq_id == 0) {
-        thread_t* mem_info_thread = thread_create_kernel("mem_usage", mem_info);
-        sched_schedule_thread(mem_info_thread);
+        // thread_t* mem_info_thread = thread_create_kernel("mem_usage", mem_info);
+        // sched_schedule_thread(mem_info_thread);
+        proc_load_init();
     }
 
     sched_yield(STATUS_DONE);

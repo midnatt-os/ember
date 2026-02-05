@@ -1,5 +1,6 @@
 #pragma once
 
+#include "fs/vfs.h"
 #include "mem/vm.h"
 
 #include <stdbool.h>
@@ -115,6 +116,8 @@ typedef struct {
 #define EM_X86_64 62
 
 #define PT_LOAD 1
+#define PT_INTERP 3
+#define PT_PHDR 6
 
 #define PF_X 0x1
 #define PF_W 0x2
@@ -208,6 +211,30 @@ typedef struct {
 // p_type
 #define PT_DYNAMIC 2
 
+#define AT_NULL 0 /* End of vector */
+#define AT_IGNORE 1 /* Entry should be ignored */
+#define AT_EXECFD 2 /* File descriptor of program */
+#define AT_PHDR 3 /* Program headers for program */
+#define AT_PHENT 4 /* Size of program header entry */
+#define AT_PHNUM 5 /* Number of program headers */
+#define AT_PAGESZ 6 /* System page size */
+#define AT_BASE 7 /* Base address of interpreter */
+#define AT_FLAGS 8 /* Flags */
+#define AT_ENTRY 9 /* Entry point of program */
+#define AT_NOTELF 10 /* Program is not ELF */
+#define AT_UID 11 /* Real uid */
+#define AT_EUID 12 /* Effective uid */
+#define AT_GID 13 /* Real gid */
+#define AT_EGID 14 /* Effective gid */
+#define AT_PLATFORM 15 /* String identifying platform */
+#define AT_HWCAP 16 /* Machine-dependent hints about processor capabilities */
+#define AT_CLKTCK 17 /* Frequency at which times() increments */
+#define AT_SECURE 23 /* Boolean, non-zero if OS is in "secure-execution" mode */
+#define AT_BASE_PLATFORM 24 /* String identifying real platform, may differ from AT_PLATFORM */
+#define AT_RANDOM 25 /* Address of 16 random bytes */
+#define AT_HWCAP2 26 /* Extension of AT_HWCAP */
+#define AT_EXECFN 31 /* Filename of program */
+
 typedef struct {
     elf64_word_t st_name;
     unsigned char st_info;
@@ -244,12 +271,35 @@ typedef struct {
     elf64_addr_t link_hi;
 } elf_image_t;
 
+typedef struct {
+    uint64_t phdr;
+    uint64_t phent;
+    uint64_t phnum;
+    uint64_t entry;
+    uint64_t base;
+    uint64_t pagesz;
+    uint64_t secure;
+} auxv64list_t;
+
+typedef struct {
+    uintptr_t entry_point;
+    uintptr_t phdr_vaddr;
+    uint16_t phnum;
+    uint16_t phentsize;
+    char* interpreter_path;
+    uintptr_t load_bias;
+} elf_info_t;
+
+
 static inline const char* elf_sym_name(const elf_syms_view_t* v, const elf64_sym_t* s) {
     return v->strtab + s->st_name;
 }
 
-bool elf_validate(const void* elf, size_t size, uint16_t type);
-elf_syms_view_t elf_get_symbols_view(const void* image, size_t size);
+bool elf_validate(const elf64_ehdr_t* ehdr);
+elf_syms_view_t elf_get_symbols_view(const void* image);
+
+int elf_load(path_t path, vm_address_space_t* as, elf_info_t* out_info, uintptr_t load_bias);
+uintptr_t elf_prepare_stack(vm_address_space_t* as, elf_info_t* prog_info, elf_info_t* interp_info, char** argv, char** envp);
 
 void elf_map_segments(const void* elf, const elf64_ehdr_t* ehdr, vm_address_space_t* as, elf_image_t* out_img);
 bool elf_dyn_parse(const void* elf, const elf64_ehdr_t* ehdr, const elf_image_t* img, dyn_info_t* di_out);

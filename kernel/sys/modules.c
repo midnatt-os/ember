@@ -3,11 +3,11 @@
 #include "lib/elf.h"
 
 
-bool module_load(const void* elf, size_t size, module_t* out_mod) {
+bool module_load(const void* elf, [[maybe_unused]] size_t size, module_t* out_mod) {
     *out_mod = (module_t) { 0 };
 
     const elf64_ehdr_t* ehdr = elf;
-    if (!elf_validate(elf, size, ET_DYN))
+    if (!elf_validate(ehdr))
         return false;
 
     elf_image_t img;

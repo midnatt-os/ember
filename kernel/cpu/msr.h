@@ -8,6 +8,10 @@ typedef enum {
     MSR_GS_BASE = 0xC000'0101,
     MSR_GS_KERNEL_BASE = 0xC000'0102,
     MSR_FS_BASE = 0xC000'0100,
+    MSR_EFER = 0xC0000080,
+    MSR_STAR = 0xC0000081,
+    MSR_LSTAR = 0xC0000082,
+    MSR_SFMASK = 0xC0000084,
 } msr_t;
 
 static inline uint64_t msr_read(msr_t msr) {

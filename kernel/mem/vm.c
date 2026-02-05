@@ -14,11 +14,13 @@
 #include "lib/list.h"
 #include "lib/rb.h"
 #include "limine.h"
+#include "mem/heap.h"
 #include "mem/hhdm.h"
 #include "mem/page.h"
 #include "mem/pmm.h"
 #include "mem/ptm.h"
 
+#include <lib/mem.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -441,6 +443,7 @@ static void region_map(vm_region_t* region, uintptr_t address, uintptr_t length)
 static void* map_common(vm_address_space_t* as, void* hint, size_t length, size_t align, uintptr_t paddr, vm_prot_t prot, vm_caching_t caching, vm_region_type_t type, uint64_t flags) {
     ASSERT((uintptr_t) hint % PAGE_SIZE == 0);
     ASSERT(length % PAGE_SIZE == 0);
+    ASSERT(length != 0);
     ASSERT(paddr % PAGE_SIZE == 0);
 
     bool prev = spinlock_lock(&as->lock);
@@ -613,6 +616,46 @@ void vm_protect(vm_address_space_t* as, void* base, size_t length, vm_prot_t pro
 
 void vm_load_as(vm_address_space_t* as) {
     cr3_write(as->cr3);
+}
+
+vm_address_space_t* vm_new_address_space() {
+    vm_address_space_t* as = heap_alloc(sizeof(vm_address_space_t));
+    *as = (vm_address_space_t) {
+        .cr3 = pmm_alloc(PMM_ZERO),
+        .lock = SPINLOCK_NEW,
+        .lower_bound = USERSPACE_START,
+        .upper_bound = ALIGN_DOWN(USERSPACE_END, PAGE_SIZE),
+    };
+
+    rb_tree_init(&as->regions, region_rb_value);
+
+    memcpy((void*) HHDM(as->cr3 + 256 * sizeof(uint64_t)), (void*) HHDM(global_as.cr3 + 256 * sizeof(uint64_t)), 256 * sizeof(uint64_t));
+
+    return as;
+}
+
+size_t vm_copy_to(vm_address_space_t* as, uintptr_t dest_vaddr, const void* src, size_t length) {
+    size_t bytes_copied = 0;
+    uint8_t* src_ptr = (uint8_t*) src;
+
+    while (bytes_copied < length) {
+        uintptr_t va = dest_vaddr + bytes_copied;
+
+        uintptr_t pa = ptm_virt_to_phys(as, va);
+        ASSERT(pa != 0);
+
+        size_t page_off = va & (PAGE_SIZE - 1);
+        size_t bytes_left_in_page = PAGE_SIZE - page_off;
+        size_t bytes_left_to_copy = length - bytes_copied;
+
+        size_t chunk = (bytes_left_in_page < bytes_left_to_copy) ? bytes_left_in_page : bytes_left_to_copy;
+
+        memcpy((void*) HHDM(pa), &src_ptr[bytes_copied], chunk);
+
+        bytes_copied += chunk;
+    }
+
+    return bytes_copied;
 }
 
 void vm_init() {

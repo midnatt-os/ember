@@ -12,7 +12,7 @@ elf_syms_view_t syms_view;
 
 void load_kernel_symbols() {
     struct limine_file* kernel_file = executable_file_request.response->executable_file;
-    syms_view = elf_get_symbols_view(kernel_file->address, kernel_file->size);
+    syms_view = elf_get_symbols_view(kernel_file->address);
 }
 
 static inline int sym_is_candidate(const elf64_sym_t* s) {

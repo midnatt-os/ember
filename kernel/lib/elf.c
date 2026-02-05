@@ -3,44 +3,41 @@
 #include "common/align.h"
 #include "common/assert.h"
 #include "common/stack_trace.h"
+#include "fs/vfs.h"
 #include "lib/mem.h"
 #include "lib/string.h"
+#include "mem/heap.h"
+#include "mem/hhdm.h"
 #include "mem/page.h"
+#include "mem/ptm.h"
 #include "mem/vm.h"
 
-#include <limits.h>
 #include <stddef.h>
 #include <stdint.h>
 
-
-bool elf_validate(const void* elf, size_t size, uint16_t type) {
-    if (!elf || size < sizeof(elf64_ehdr_t))
+bool elf_validate(const elf64_ehdr_t* ehdr) {
+    if (ehdr->e_ident[EI_MAG0] != ELFMAG0 || ehdr->e_ident[EI_MAG1] != ELFMAG1 || ehdr->e_ident[EI_MAG2] != ELFMAG2 || ehdr->e_ident[EI_MAG3] != ELFMAG3) {
         return false;
+    }
 
-    const elf64_ehdr_t* ehdr = (const elf64_ehdr_t*) elf;
-
-    if (ehdr->e_ident[EI_MAG0] != ELFMAG0 || ehdr->e_ident[EI_MAG1] != ELFMAG1 || ehdr->e_ident[EI_MAG2] != ELFMAG2 || ehdr->e_ident[EI_MAG3] != ELFMAG3)
+    if (ehdr->e_ident[EI_CLASS] != ELFCLASS64 || ehdr->e_ident[EI_DATA] != ELFDATA2LSB || ehdr->e_machine != EM_X86_64) {
         return false;
+    }
 
-    if (ehdr->e_ident[EI_CLASS] != ELFCLASS64 || ehdr->e_ident[EI_DATA] != ELFDATA2LSB || ehdr->e_ident[EI_VERSION] != EV_CURRENT)
+    if (ehdr->e_type != ET_EXEC && ehdr->e_type != ET_DYN) {
         return false;
+    }
 
-    if (ehdr->e_type != type || ehdr->e_machine != EM_X86_64 || ehdr->e_version != EV_CURRENT)
+    if (ehdr->e_phentsize != sizeof(elf64_phdr_t) || ehdr->e_phnum == 0) {
         return false;
-
-    if (ehdr->e_shoff == 0 || ehdr->e_shentsize != sizeof(elf64_shdr_t) || ehdr->e_shnum == 0 || ehdr->e_shstrndx >= ehdr->e_shnum)
-        return false;
-
-    const size_t table_bytes = (size_t) ehdr->e_shentsize * (size_t) ehdr->e_shnum;
-    if (ehdr->e_shoff > size || table_bytes > size - ehdr->e_shoff)
-        return false;
+    }
 
     return true;
 }
 
-elf_syms_view_t elf_get_symbols_view(const void* elf, size_t size) {
+elf_syms_view_t elf_get_symbols_view(const void* elf) {
     const elf64_ehdr_t* ehdr = elf;
-    ASSERT(elf_validate(elf, size, ET_EXEC));
+    ASSERT(elf_validate(ehdr));
 
     const uintptr_t base = (uintptr_t) elf;
     const elf64_shdr_t* shdr = (const elf64_shdr_t*) (base + ehdr->e_shoff);
@@ -78,14 +75,22 @@ void elf_map_segments(const void* elf, const elf64_ehdr_t* ehdr, vm_address_spac
 
         if (seg_lo < lo)
             lo = seg_lo;
-
         if (seg_hi > hi)
             hi = seg_hi;
     }
     ASSERT(hi > lo);
 
     size_t elf_size = (size_t) (hi - lo);
-    void* base = vm_map_anon(as, nullptr, elf_size, PAGE_SIZE, VM_PROT_RW, VM_CACHING_WRITE_BACK, VM_FLAG_DEFAULT);
+
+    uint64_t flags = VM_FLAG_DEFAULT;
+    void* hint = 0;
+
+    if (ehdr->e_type == ET_EXEC) {
+        flags |= VM_FLAG_FIXED;
+        hint = (void*) lo;
+    }
+
+    void* base = vm_map_anon(as, hint, elf_size, PAGE_SIZE, VM_PROT_RW, VM_CACHING_WRITE_BACK, flags);
     ASSERT(base);
 
     uintptr_t bias = (uintptr_t) base - lo;
@@ -329,7 +334,6 @@ void elf_finalize_protections(const void* elf, const elf64_ehdr_t* ehdr, const e
     }
 }
 
-// --- Step 6: Find init/deinit ---
 uintptr_t elf_find_func(const dyn_info_t* di, const elf_image_t* img, const char* want) {
     ASSERT(di->dynsym && di->dynstr && di->dynsym_cnt);
 
@@ -354,4 +358,205 @@ uintptr_t elf_find_func(const dyn_info_t* di, const elf_image_t* img, const char
     }
 
     return 0;
+}
+
+static size_t read_from_vfs(vnode_t* node, vm_address_space_t* dest_as, uintptr_t dest_vaddr, size_t length, off_t file_offset) {
+    size_t bytes_read = 0;
+
+    while (bytes_read < length) {
+        uintptr_t va = dest_vaddr + bytes_read;
+        uintptr_t pa = ptm_virt_to_phys(dest_as, va);
+        ASSERT(pa != 0);
+
+        size_t page_off = va & (PAGE_SIZE - 1);
+        size_t bytes_in_page = PAGE_SIZE - page_off;
+        size_t bytes_left = length - bytes_read;
+        size_t chunk = (bytes_in_page < bytes_left) ? bytes_in_page : bytes_left;
+
+        ssize_t res = node->ops->read(node, (void*) HHDM(pa), chunk, file_offset + bytes_read);
+        if (res <= 0)
+            break;
+
+        bytes_read += res;
+        if ((size_t) res < chunk)
+            break;
+    }
+    return bytes_read;
+}
+
+static bool load_segment(vm_address_space_t* as, vnode_t* vnode, elf64_phdr_t* phdr, uintptr_t bias) {
+    uintptr_t vaddr = phdr->p_vaddr + bias;
+    uintptr_t aligned_vaddr = ALIGN_DOWN(vaddr, PAGE_SIZE);
+    size_t adjustment = vaddr - aligned_vaddr;
+    size_t map_len = ALIGN_UP(phdr->p_memsz + adjustment, PAGE_SIZE);
+
+    vm_prot_t prot = { .read = (phdr->p_flags & PF_R) != 0, .write = (phdr->p_flags & PF_W) != 0, .execute = (phdr->p_flags & PF_X) != 0 };
+
+    vm_map_anon(as, (void*) aligned_vaddr, map_len, 0, prot, VM_CACHING_WRITE_BACK, VM_FLAG_FIXED | VM_FLAG_ZERO);
+
+    if (phdr->p_filesz > 0) {
+        size_t read = read_from_vfs(vnode, as, vaddr, phdr->p_filesz, phdr->p_offset);
+        if (read != phdr->p_filesz)
+            return false;
+    }
+
+    return true;
+}
+
+int elf_load(path_t path, vm_address_space_t* as, elf_info_t* out_info, uintptr_t load_bias) {
+    vnode_t* vnode;
+    if (vfs_lookup(path, &vnode) < 0)
+        return -1;
+
+    elf64_ehdr_t ehdr;
+    if (vnode->ops->read(vnode, &ehdr, sizeof(ehdr), 0) != sizeof(ehdr))
+        return -1; // ELF_RESULT_ERR_FS;
+
+    if (!elf_validate(&ehdr))
+        return -1; // INVALID HEADER
+
+    load_bias = (ehdr.e_type == ET_DYN) ? load_bias : 0;
+
+    out_info->entry_point = ehdr.e_entry + load_bias;
+    out_info->phnum = ehdr.e_phnum;
+    out_info->phentsize = ehdr.e_phentsize;
+    out_info->interpreter_path = nullptr;
+    out_info->load_bias = load_bias;
+
+    for (size_t i = 0; i < ehdr.e_phnum; i++) {
+        elf64_phdr_t phdr;
+        vnode->ops->read(vnode, &phdr, sizeof(phdr), ehdr.e_phoff + (i * ehdr.e_phentsize));
+
+        switch (phdr.p_type) {
+            case PT_LOAD: {
+                if (!load_segment(as, vnode, &phdr, load_bias))
+                    return -1; // ELF_RESULT_ERR_FS;
+                break;
+            }
+
+            case PT_PHDR: {
+                out_info->phdr_vaddr = phdr.p_vaddr + load_bias;
+                break;
+            }
+
+            case PT_INTERP: {
+                out_info->interpreter_path = heap_alloc(phdr.p_filesz + 1);
+                vnode->ops->read(vnode, out_info->interpreter_path, phdr.p_filesz, phdr.p_offset);
+                out_info->interpreter_path[phdr.p_filesz] = '\0';
+                break;
+            }
+        }
+    }
+    return 0; // ELF_RESULT_OK;
+}
+
+uintptr_t elf_prepare_stack(vm_address_space_t* as, elf_info_t* prog_info, elf_info_t* interp_info, char** argv, char** envp) {
+    // 1. Define the stack top based on your architectural limit
+    uintptr_t stack_top = ALIGN_DOWN(USERSPACE_END, PAGE_SIZE);
+    uintptr_t sp = stack_top;
+
+#define PUSH_DATA(DATA, LEN)                       \
+    ({                                             \
+        sp -= (LEN);                               \
+        vm_copy_to(as, sp, (void*) (DATA), (LEN)); \
+        sp;                                        \
+    })
+
+#define PUSH_U64(VAL)                              \
+    ({                                             \
+        uint64_t _v = (uint64_t) (VAL);            \
+        sp -= sizeof(uint64_t);                    \
+        vm_copy_to(as, sp, &_v, sizeof(uint64_t)); \
+        sp;                                        \
+    })
+
+    // 2. Map Stack (2MB)
+    size_t stack_size = 0x200000;
+    uintptr_t stack_base = ALIGN_DOWN(stack_top - stack_size, PAGE_SIZE);
+    void* got = vm_map_anon(as, (void*) stack_base, stack_size, 0, (vm_prot_t) { .read = 1, .write = 1, .execute = 0 }, VM_CACHING_WRITE_BACK, VM_FLAG_FIXED | VM_FLAG_ZERO);
+    ASSERT((uintptr_t) got == stack_base);
+
+    // 3. Count argv and envp
+    size_t argc = 0;
+    while (argv && argv[argc])
+        argc++;
+    size_t envc = 0;
+    while (envp && envp[envc])
+        envc++;
+
+    // 4. Push Strings (Characters)
+    // We push these first so they sit at the highest memory addresses
+    uintptr_t* envp_ptrs = heap_alloc(sizeof(uintptr_t) * envc);
+    for (int i = (int) envc - 1; i >= 0; i--) {
+        envp_ptrs[i] = PUSH_DATA(envp[i], strlen(envp[i]) + 1);
+    }
+
+    uintptr_t* argv_ptrs = heap_alloc(sizeof(uintptr_t) * argc);
+    for (int i = (int) argc - 1; i >= 0; i--) {
+        argv_ptrs[i] = PUSH_DATA(argv[i], strlen(argv[i]) + 1);
+    }
+
+    // 5. ABI Pointer Table Alignment
+    // Calculate total 64-bit words to be pushed:
+    // 1 (argc) + argc + 1 (argv term) + envc + 1 (envp term) + 12 (auxv)
+    size_t table_size = 1 + argc + 1 + envc + 1 + 12;
+
+    // Align sp to 16 bytes initially
+    sp &= -16LL;
+
+    // If we are pushing an odd number of items, we need to start at an offset
+    // so that the final sp (after pushes) lands on a 16-byte boundary.
+    if (table_size % 2 != 0) {
+        sp -= 8; // Create a padding slot
+    }
+
+    // 6. Push the Table (In REVERSE order of how the CPU reads it)
+    // The sequence is: [argc] [argv ptrs] [NULL] [envp ptrs] [NULL] [Auxv]
+
+    // --- Step 6a: Auxiliary Vector (Ends with AT_NULL) ---
+    PUSH_U64(0); // AT_NULL Value
+    PUSH_U64(AT_NULL); // AT_NULL Type
+
+    PUSH_U64(interp_info ? interp_info->load_bias : 0);
+    PUSH_U64(AT_BASE);
+
+    PUSH_U64(prog_info->entry_point);
+    PUSH_U64(AT_ENTRY);
+
+    PUSH_U64(prog_info->phentsize);
+    PUSH_U64(AT_PHENT);
+
+    PUSH_U64(prog_info->phnum);
+    PUSH_U64(AT_PHNUM);
+
+    PUSH_U64(prog_info->phdr_vaddr);
+    PUSH_U64(AT_PHDR);
+
+    // --- Step 6b: Environment Pointers ---
+    PUSH_U64(0); // envp terminator
+    for (int i = (int) envc - 1; i >= 0; i--) {
+        PUSH_U64(envp_ptrs[i]);
+    }
+
+    // --- Step 6c: Argument Pointers ---
+    PUSH_U64(0); // argv terminator
+    for (int i = (int) argc - 1; i >= 0; i--) {
+        PUSH_U64(argv_ptrs[i]);
+    }
+
+    // --- Step 6d: Argc ---
+    PUSH_U64(argc);
+
+    // 7. Final Alignment
+    // System V ABI: RSP must be 16-byte aligned at process entry
+    ASSERT((sp & 15) == 0);
+
+    // Cleanup kernel memory
+    heap_free(envp_ptrs, sizeof(uintptr_t) * envc);
+    heap_free(argv_ptrs, sizeof(uintptr_t) * argc);
+
+#undef PUSH_DATA
+#undef PUSH_U64
+
+    return sp;
 }

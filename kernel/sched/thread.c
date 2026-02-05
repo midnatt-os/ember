@@ -4,13 +4,16 @@
 #include "common/assert.h"
 #include "common/log.h"
 #include "cpu/cpu.h"
+#include "cpu/fpu.h"
 #include "lib/mem.h"
+#include "lib/string.h"
 #include "mem/heap.h"
 #include "mem/page.h"
 #include "mem/pmm.h"
 #include "mem/ptm.h"
 #include "mem/slab.h"
 #include "mem/vm.h"
+#include "sched/proc.h"
 #include "sched/sched.h"
 #include "sys/timers.h"
 
@@ -26,8 +29,17 @@ typedef struct {
     void (*exit)();
 } kernel_init_stack_t;
 
+typedef struct {
+    kernel_init_stack_t kstack;
+
+    void (*user_trampoline)();
+    uint64_t user_rip;
+    uint64_t user_rsp;
+} user_init_stack_t;
+
 
 object_cache_t* thread_cache = nullptr; // TODO: .slab_caches linker section registration and init
+object_cache_t* fpu_state_cache = nullptr; // TODO: .slab_caches linker section registration and init
 
 uint64_t next_tid = 0;
 
@@ -97,6 +109,67 @@ thread_t* thread_create_kernel(char* name, void* entry_fn) {
 
     t->kstack_base = stack;
     t->kstack_size = K_THREAD_STACK_SIZE;
+
+    t->sched_list_node = (list_node_t) { 0 };
+    t->reap_list_node = (list_node_t) { 0 };
+    t->sleep_timer = timer_create((timer_fn_t) sched_wake_thread, t);
+
+    return t;
+}
+
+extern void user_thread_trampoline();
+
+thread_t* thread_create_user(process_t* proc, char* name, uintptr_t entry, uintptr_t user_sp) {
+    thread_t* t = slab_alloc(thread_cache);
+    ASSERT(t);
+
+    // Allocate kernel stack for this thread
+    void* stack = vm_map_anon(&global_as, 0, K_THREAD_STACK_SIZE, 0, VM_PROT_RW, VM_CACHING_WRITE_BACK, VM_FLAG_ZERO);
+    ASSERT(stack);
+    memset(stack, 0xDE, K_THREAD_STACK_SIZE);
+
+    // Prepare the initial stack frame
+    user_init_stack_t f = {
+        .kstack = {
+            .r12 = 0, .r13 = 0, .r14 = 0, .r15 = 0, .rbp = 0, .rbx = 0,
+            .trampoline = (void*) kernel_thread_trampoline,
+            // Instead of jumping to a function, we jump to our user trampoline logic
+            .fn = (void*) user_thread_trampoline,
+            .exit = thread_exit,
+        },
+        .user_trampoline = user_thread_trampoline,
+        .user_rip = entry,
+        .user_rsp = user_sp
+    };
+
+    uintptr_t sp_top = ((uintptr_t) stack + K_THREAD_STACK_SIZE) & ~0xFULL;
+    uintptr_t sp = sp_top - sizeof(f);
+    memcpy((void*) sp, &f, sizeof(f));
+
+    t->rsp = sp;
+    t->tid = next_tid++;
+    t->name = name;
+
+    size_t len = strlen(name);
+    char* name_buffer = heap_alloc(len + 1);
+    strcpy(name_buffer, name);
+    t->name = name_buffer;
+
+    t->status = STATUS_READY;
+    t->cpu_id = CPU_CURRENT->seq_id;
+    t->proc = proc;
+
+    t->kstack_base = stack;
+    t->kstack_size = K_THREAD_STACK_SIZE;
+
+    /*void* fpu_area = slab_alloc(fpu_state_cache);
+    ASSERT(fpu_area);
+    t->state.fpu_area = fpu_area;
+    memclear(fpu_area, g_fpu_area_size);*/
+
+    void* fpu_area = slab_alloc(fpu_state_cache);
+    fpu_init_thread_state(fpu_area);
+    t->state.fpu_area = fpu_area;
 
     t->sched_list_node = (list_node_t) { 0 };
     t->reap_list_node = (list_node_t) { 0 };

@@ -166,6 +166,23 @@ void log_raw(const char* fmt, ...) {
     log_lock_release(taken, prev);
 }
 
+void log_console_write(const char* buf, size_t count) {
+    bool taken;
+    bool prev = log_lock_acquire(&taken);
+
+#ifdef LOGGING_FB
+    flanterm_write(ft_ctx, buf, count);
+
+#endif
+#ifdef LOGGING_SERIAL
+    for (size_t i = 0; i < count; i++) {
+        qemu_dbg_putc(buf[i]);
+    }
+#endif
+
+    log_lock_release(taken, prev);
+}
+
 void log_init() {
     struct limine_framebuffer* fb = framebuffer_request.response->framebuffers[0];
     ft_ctx = flanterm_fb_init(

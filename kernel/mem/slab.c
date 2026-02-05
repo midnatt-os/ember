@@ -54,6 +54,7 @@ static slab_t* cache_grow(object_cache_t* cache) {
 }
 
 void* slab_alloc(object_cache_t* cache) {
+    ASSERT(cache);
     bool prev = spinlock_lock(&cache->slabs_lock);
 
 alloc:
@@ -87,6 +88,7 @@ alloc:
 }
 
 void slab_free(object_cache_t* cache, void* obj) {
+    ASSERT(cache);
     ASSERT(obj);
     bool prev = spinlock_lock(&cache->slabs_lock);
 

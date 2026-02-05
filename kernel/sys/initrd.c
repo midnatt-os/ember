@@ -1,6 +1,7 @@
 #include "sys/initrd.h"
 
 #include "common/align.h"
+#include "common/assert.h"
 #include "common/log.h"
 #include "fs/impl/tmpfs.h"
 #include "fs/vfs.h"
@@ -13,6 +14,7 @@
 #define S_IFMT 0170000
 #define S_IFDIR 0040000
 #define S_IFREG 0100000
+#define S_ISLNK 0120000
 
 typedef struct [[gnu::packed]] {
     char c_magic[6];
@@ -94,26 +96,37 @@ void initrd_unpack(void* addr, size_t size) {
 
         int file_type = mode & S_IFMT;
 
-        if (file_type == S_IFDIR) {
-            int err = vfs_mkdir(target_path);
-            if (!err)
-                logln(LOG_INFO, "INITRD", "Created Dir: /%s", filename);
-        } else if (file_type == S_IFREG) {
-            // 1. Create the File (Allocate vnode and tmpfs_node)
-            int err = vfs_create(target_path);
-            if (err)
-                continue;
+        switch (file_type) {
+            case S_IFDIR: {
+                ASSERT(vfs_mkdir(target_path) == 0);
+                break;
+            }
 
-            // 2. Lookup the newly created node
-            vnode_t* node = NULL;
-            err = vfs_lookup(target_path, &node);
-            if (!err && node->type == V_REG) {
-                // 3. ZERO-COPY HACK: Point the tmpfs_node directly to the initrd memory
-                tmpfs_node_t* t_node = (tmpfs_node_t*) node->private;
-                t_node->file.base = file_data;
-                t_node->file.size = filesize;
+            case S_IFREG: {
+                // 1. Create the File (Allocate vnode and tmpfs_node)
+                ASSERT(vfs_create(target_path) == 0);
 
-                logln(LOG_INFO, "INITRD", "Created File: /%s (%lu bytes)", filename, filesize);
+                // 2. Lookup the newly created node
+                vnode_t* node = nullptr;
+                ASSERT(vfs_lookup(target_path, &node) == 0);
+                if (node->type == V_REG) {
+                    // 3. ZERO-COPY HACK: Point the tmpfs_node directly to the initrd memory
+                    tmpfs_node_t* t_node = (tmpfs_node_t*) node->private;
+                    t_node->file.base = file_data;
+                    t_node->file.size = filesize;
+
+                    // logln(LOG_DEBUG, "INITRD", "Created File: /%s (%lu bytes)", filename, filesize);
+                }
+                break;
+            }
+
+            case S_ISLNK: {
+                // logln(LOG_DEBUG, "INITRD", "LINK: /%s (%lu bytes)", filename, filesize);
+                break;
+            }
+
+            default: {
+                logln(LOG_DEBUG, "INITRD", "FILE_TYPE ???");
             }
         }
     }
