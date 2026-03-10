@@ -73,7 +73,7 @@ uint64_t (*log_get_time)() = get_time_zero;
         fb_putc(*str++);
 }
 
-static void log_putc(char c) {
+[[maybe_unused]] static void log_putc(char c) {
 #ifdef LOGGING_SERIAL
     qemu_dbg_putc(c);
 #endif
@@ -94,7 +94,6 @@ static void log_puts(const char* str) {
 void log_list(LogLevel level, const char* tag, const char* fmt, va_list list) {
     char* level_name = "DEBUG";
     char* color = DEBUG_COLOR;
-
     switch (level) {
         case LOG_INFO:
             level_name = "INFO";
@@ -140,6 +139,9 @@ void log(LogLevel level, const char* tag, const char* fmt, ...) {
 }
 
 void logln(LogLevel level, const char* tag, const char* fmt, ...) {
+    (void) level;
+    (void) tag;
+    (void) fmt;
     bool taken;
     bool prev = log_lock_acquire(&taken);
 

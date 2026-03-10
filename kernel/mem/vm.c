@@ -19,6 +19,7 @@
 #include "mem/page.h"
 #include "mem/pmm.h"
 #include "mem/ptm.h"
+#include "sys/init.h"
 
 #include <lib/mem.h>
 #include <stddef.h>
@@ -314,7 +315,7 @@ vm_region_t* region_alloc() {
         list_node_t* n = list_pop(&region_pool);
         spinlock_unlock(&region_pool_lock, prev_pool);
         vm_region_t* r = CONTAINER_OF(n, vm_region_t, pool_node);
-        *r = (vm_region_t) { 0 };
+        *r = (vm_region_t) {0};
         return r;
     }
 
@@ -328,7 +329,7 @@ vm_region_t* region_alloc() {
         list_append(&region_pool, &new_regions[i].pool_node);
 
     vm_region_t* r = CONTAINER_OF(list_pop(&region_pool), vm_region_t, pool_node);
-    *r = (vm_region_t) { 0 };
+    *r = (vm_region_t) {0};
 
     spinlock_unlock(&region_pool_lock, prev);
 
@@ -658,7 +659,11 @@ size_t vm_copy_to(vm_address_space_t* as, uintptr_t dest_vaddr, const void* src,
     return bytes_copied;
 }
 
-void vm_init() {
+void vm_ap_init() {
+    tlb_register_ipi_handler();
+}
+
+INIT_TARGET(vm, INIT_STAGE_EARLY, INIT_SCOPE_BSP, INIT_DEPS("pat", "pmm")) {
     global_as = (vm_address_space_t) {
         .cr3 = pmm_alloc(PMM_ZERO),
         .lock = SPINLOCK_NEW,
@@ -677,13 +682,11 @@ void vm_init() {
 
     struct limine_executable_address_response* kernel_addr = executable_address_request.response;
 
-    vm_map_direct(&global_as, __TEXT_START, __TEXT_END - __TEXT_START, 0, kernel_addr->physical_base + ((uintptr_t) __TEXT_START - kernel_addr->virtual_base), (vm_prot_t) { .read = true, .execute = true }, VM_CACHING_WRITE_BACK, VM_FLAG_FIXED);
-    vm_map_direct(&global_as, __RODATA_START, __RODATA_END - __RODATA_START, 0, kernel_addr->physical_base + ((uintptr_t) __RODATA_START - kernel_addr->virtual_base), (vm_prot_t) { .read = true }, VM_CACHING_WRITE_BACK, VM_FLAG_FIXED);
+    vm_map_direct(&global_as, __TEXT_START, __TEXT_END - __TEXT_START, 0, kernel_addr->physical_base + ((uintptr_t) __TEXT_START - kernel_addr->virtual_base), (vm_prot_t) {.read = true, .execute = true}, VM_CACHING_WRITE_BACK, VM_FLAG_FIXED);
+    vm_map_direct(&global_as, __RODATA_START, __RODATA_END - __RODATA_START, 0, kernel_addr->physical_base + ((uintptr_t) __RODATA_START - kernel_addr->virtual_base), (vm_prot_t) {.read = true}, VM_CACHING_WRITE_BACK, VM_FLAG_FIXED);
     vm_map_direct(&global_as, __DATA_START, __DATA_END - __DATA_START, 0, kernel_addr->physical_base + ((uintptr_t) __DATA_START - kernel_addr->virtual_base), VM_PROT_RW, VM_CACHING_WRITE_BACK, VM_FLAG_FIXED);
     vm_map_direct(&global_as, __BSS_START, __BSS_END - __BSS_START, 0, kernel_addr->physical_base + ((uintptr_t) __BSS_START - kernel_addr->virtual_base), VM_PROT_RW, VM_CACHING_WRITE_BACK, VM_FLAG_FIXED);
-    vm_map_direct(
-        &global_as, __LIMINE_REQ_START, __LIMINE_REQ_END - __LIMINE_REQ_START, 0, kernel_addr->physical_base + ((uintptr_t) __LIMINE_REQ_START - kernel_addr->virtual_base), (vm_prot_t) { .read = true }, VM_CACHING_WRITE_BACK, VM_FLAG_FIXED
-    );
+    vm_map_direct(&global_as, __LIMINE_REQ_START, __LIMINE_REQ_END - __LIMINE_REQ_START, 0, kernel_addr->physical_base + ((uintptr_t) __LIMINE_REQ_START - kernel_addr->virtual_base), (vm_prot_t) {.read = true}, VM_CACHING_WRITE_BACK, VM_FLAG_FIXED);
 
     /*
     struct limine_memmap_response* memmap = memmap_request.response;
@@ -747,8 +750,4 @@ void vm_init() {
     vm_load_as(&global_as);
 
     logln(LOG_INFO, "VM", "Initialized");
-}
-
-void vm_ap_init() {
-    tlb_register_ipi_handler();
 }

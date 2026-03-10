@@ -66,7 +66,7 @@ static void timer_process(interrupt_frame_t* _) {
 
         rb_delete(&q->queue, &t->node);
         t->armed = false;
-        t->node = (rb_node_t) { 0 };
+        t->node = (rb_node_t) {0};
 
         t->callback(t->data);
         now = tsc_time();
@@ -166,6 +166,5 @@ void timer_init_cpu() {
 
     if (timer_vec == 0) {
         timer_vec = interrupts_request_vector(timer_process);
-        log_raw("Timer vector assigned: %d\n", timer_vec);
     }
 }

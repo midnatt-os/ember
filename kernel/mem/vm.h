@@ -20,7 +20,7 @@
 #define VM_FLAG_ZERO (1 << 1)
 #define VM_FLAG_DEMAND_PAGED (1 << 2)
 
-#define VM_PROT_RW ((vm_prot_t) { .read = true, .write = true })
+#define VM_PROT_RW ((vm_prot_t) {.read = true, .write = true})
 
 typedef struct {
     uintptr_t cr3;
@@ -113,5 +113,4 @@ void vm_load_as(vm_address_space_t* as);
 vm_address_space_t* vm_new_address_space();
 size_t vm_copy_to(vm_address_space_t* as, uintptr_t dest_vaddr, const void* src, size_t length);
 
-void vm_init();
 void vm_ap_init();

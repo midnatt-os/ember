@@ -23,5 +23,6 @@ void fd_table_put(fd_table_t* table);
 int fd_install(fd_table_t* table, file_t* file, int flags);
 file_t* fd_get(fd_table_t* table, int fd);
 int fd_close(fd_table_t* table, int fd);
+int fd_dup(fd_table_t* table, int fd);
 
 void fd_init();

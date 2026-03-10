@@ -1,3 +1,5 @@
+#include "sys/init.h"
+
 #include "common/align.h"
 #include "common/asm.h"
 #include "common/assert.h"
@@ -13,11 +15,15 @@
 #include "cpu/interrupts.h"
 #include "cpu/lapic.h"
 #include "cpu/msr.h"
-#include "cpu/pat.h"
+#include "cpu/port.h"
 #include "cpu/syscall.h"
 #include "cpu/tsc.h"
 #include "cpu/tss.h"
 #include "dev/hpet.h"
+#include "dev/ioapic.h"
+#include "dev/ps2c.h"
+#include "dev/ps2kb.h"
+#include "drivers/tty.h"
 #include "fs/impl/devfs.h"
 #include "fs/impl/tmpfs.h"
 #include "fs/vfs.h"
@@ -26,6 +32,7 @@
 #include "lib/hashmap.h"
 #include "lib/mem.h"
 #include "lib/rb.h"
+#include "lib/string.h"
 #include "limine.h"
 #include "mem/heap.h"
 #include "mem/hhdm.h"
@@ -62,7 +69,7 @@ static void wait_for_aps_release() {
 void ap_init([[maybe_unused]] struct limine_mp_info* cpu_info) {
     gdt_init();
     interrupts_init();
-    pat_enable();
+    // pat_enable();
     vm_load_as(&global_as);
     vm_ap_init();
     fpu_init_core();
@@ -98,18 +105,20 @@ void ap_init([[maybe_unused]] struct limine_mp_info* cpu_info) {
 [[noreturn]] void init() {
     log_init();
     load_kernel_symbols();
-
     gdt_init();
     interrupts_init();
 
-    pmm_init();
-    pat_enable();
-    vm_init();
-    slab_init();
-    heap_init();
+    // pmm_init();
+    // pat_enable();
+    // vm_init();
+    // slab_init();
+    // heap_init();
+
+    init_run_stage(INIT_STAGE_EARLY, false);
+    while (true) {
+    }
 
     acpi_early_init();
-
     hpet_init();
     tsc_init();
 
@@ -142,6 +151,7 @@ void ap_init([[maybe_unused]] struct limine_mp_info* cpu_info) {
     }
 
     lapic_bsp_init();
+    ioapic_init();
 
     timer_init_cpu();
 
@@ -162,6 +172,7 @@ void ap_init([[maybe_unused]] struct limine_mp_info* cpu_info) {
     cpu_online_count = 1;
 
     thread_cache = slab_create_cache("thread", sizeof(thread_t), PAGE_SIZE);
+
     fpu_init_features();
     fpu_init_core();
     fpu_state_cache = slab_create_cache("fpu", g_fpu_area_size, 4 * PAGE_SIZE);
@@ -170,6 +181,7 @@ void ap_init([[maybe_unused]] struct limine_mp_info* cpu_info) {
 
     syscall_init();
 
+    tty_init();
     proc_init();
 
     sched_init_cpu();

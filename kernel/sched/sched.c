@@ -10,6 +10,7 @@
 #include "cpu/fpu.h"
 #include "cpu/msr.h"
 #include "cpu/tsc.h"
+#include "dev/ps2c.h"
 #include "flanterm.h"
 #include "lib/container.h"
 #include "lib/list.h"
@@ -233,7 +234,11 @@ void sched_init_cpu() {
         // thread_t* mem_info_thread = thread_create_kernel("mem_usage", mem_info);
         // sched_schedule_thread(mem_info_thread);
         proc_load_init();
+
+        // TODO: MOVE, perhaps a handoff flag in the end and keep this (shced_init_cpu) as jsut initing?
+        ps2c_init();
     }
+
 
     sched_yield(STATUS_DONE);
     ASSERT_UNREACHABLE();

@@ -3,6 +3,8 @@
 #include "common/assert.h"
 #include "common/lock/spinlock.h"
 #include "common/log.h"
+#include "fs/fd.h"
+#include "fs/file.h"
 #include "fs/vfs.h"
 #include "lib/elf.h"
 #include "lib/list.h"
@@ -69,6 +71,29 @@ void proc_load_init() {
     init_proc->cwd = vfs_get_root();
     // TODO: REF cwd
 
+    vnode_t* tty0_vn = nullptr;
+    ASSERT(vfs_lookup(ABS_PATH("/dev/tty0"), &tty0_vn) == 0);
+
+    vnode_t* opened = nullptr;
+    ASSERT(vfs_open(tty0_vn, O_RDWR, &opened) == 0);
+
+    init_proc->ctty_vnode = opened;
+
+    file_t* f = file_alloc(opened, O_RDWR);
+    ASSERT(f);
+
+    // STDIN
+    ASSERT(fd_install(init_proc->fd_table, f, 0) == 0);
+
+    // STDOUT
+    file_ref(f);
+    ASSERT(fd_install(init_proc->fd_table, f, 0) == 1);
+
+    // STDERR
+    file_ref(f);
+    ASSERT(fd_install(init_proc->fd_table, f, 0) == 2);
+
+
     elf_info_t prog_info;
     elf_info_t interp_info;
 
@@ -88,8 +113,8 @@ void proc_load_init() {
         entry = interp_info.entry_point;
     }
 
-    char* argv[] = { (char*) elf_path.path, NULL };
-    char* envp[] = { "PATH=/usr/bin", "TERM=xterm", "MLIBC_RTLD_DEBUG=1", "MLIBC_RTLD_DEBUG_VERBOSE=1", NULL };
+    char* argv[] = {(char*) elf_path.path, "+m", nullptr};
+    char* envp[] = {"PATH=/usr/bin", "TERM=xterm", nullptr}; // "MLIBC_RTLD_DEBUG=1", "MLIBC_RTLD_DEBUG_VERBOSE=1",
 
     uintptr_t user_sp = elf_prepare_stack(init_proc->address_space, &prog_info, &interp_info, argv, envp);
 

@@ -50,5 +50,6 @@ file_t* file_alloc(vnode_t* vnode, int flags);
 ssize_t file_read(file_t* file, void* buf, size_t count);
 ssize_t file_write(file_t* file, const void* buf, size_t count);
 off_t file_seek(file_t* file, off_t offset, int whence);
+poll_mask_t file_poll(file_t* file, poll_table_t* pt);
 
 void file_init();

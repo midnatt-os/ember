@@ -7,14 +7,14 @@
 
 #include <stdint.h>
 
-typedef enum {
+typedef enum thread_status {
     STATUS_READY,
     STATUS_RUNNING,
     STATUS_BLOCKED,
     STATUS_DONE,
 } thread_status_t;
 
-typedef struct {
+typedef struct thread {
     uintptr_t rsp;
     uintptr_t syscall_rsp;
     void* kstack_base;

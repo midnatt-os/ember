@@ -1,8 +1,11 @@
 #pragma once
 
 #include "common/lock/spinlock.h"
-#include "sched/thread.h"
+#include "lib/list.h"
 #include "sys/timers.h"
+
+typedef struct thread thread_t;
+typedef enum thread_status thread_status_t;
 
 typedef struct {
     thread_t* current_thread;

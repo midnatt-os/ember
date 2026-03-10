@@ -3,12 +3,15 @@
 #include "fs/vfs.h"
 #include "lib/list.h"
 
+typedef struct devfs_node devfs_node_t;
+
 typedef struct {
+    int (*open)(devfs_node_t* node, uint32_t flags, vnode_t** out_vn);
     ssize_t (*read)(void* buffer, size_t count, off_t offset);
     ssize_t (*write)(const void* buffer, size_t count, off_t offset);
+    int (*ioctl)(devfs_node_t* node, uint64_t req, uintptr_t u_arg);
+    poll_mask_t (*poll)(devfs_node_t* node, poll_table_t* pt);
 } dev_ops_t;
-
-typedef struct devfs_node devfs_node_t;
 
 struct devfs_node {
     const char* name;

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "mem/vm.h"
+
 #include <stdint.h>
 
 typedef struct {
@@ -17,3 +19,6 @@ typedef struct {
 } syscall_result_t;
 
 typedef syscall_result_t (*syscall_handler_t)(syscall_args_t* args);
+
+int copy_from_user(void* k_dest, uintptr_t u_src, size_t len, vm_address_space_t* as);
+int copy_to_user(uintptr_t u_dest, const void* k_src, size_t len, vm_address_space_t* as);

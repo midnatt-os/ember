@@ -54,8 +54,8 @@ int fd_install(fd_table_t* table, file_t* file, int flags) {
 }
 
 file_t* fd_get(fd_table_t* table, int fd) {
-    ASSERT(fd >= 0);
-    ASSERT(fd < MAX_FDS);
+    if (fd < 0 || fd >= MAX_FDS)
+        return nullptr;
 
     mutex_lock(&table->lock);
 
@@ -85,6 +85,41 @@ int fd_close(fd_table_t* table, int fd) {
     file_put(file);
     return 0;
 }
+
+int fd_dup(fd_table_t* table, int oldfd) {
+    if (oldfd < 0 || oldfd >= MAX_FDS)
+        return -EBADF;
+
+    mutex_lock(&table->lock);
+
+    file_t* file = table->entries[oldfd].file;
+    if (!file) {
+        mutex_unlock(&table->lock);
+        return -EBADF;
+    }
+
+    int newfd = -1;
+    for (int i = 0; i < MAX_FDS; i++) {
+        if (table->entries[i].file == nullptr) {
+            newfd = i;
+            break;
+        }
+    }
+
+    if (newfd < 0) {
+        mutex_unlock(&table->lock);
+        return -EMFILE;
+    }
+
+    file_ref(file);
+    table->entries[newfd].file = file;
+
+    table->entries[newfd].flags = table->entries[oldfd].flags;
+
+    mutex_unlock(&table->lock);
+    return newfd;
+}
+
 
 void fd_init() {
     fd_table_cache = slab_create_cache("fdtable", sizeof(fd_table_t), 4 * PAGE_SIZE);

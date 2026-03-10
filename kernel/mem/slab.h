@@ -30,4 +30,3 @@ typedef struct {
 void* slab_alloc(object_cache_t* cache);
 void slab_free(object_cache_t* cache, void* obj);
 object_cache_t* slab_create_cache(const char* name, size_t object_size, size_t slab_size);
-void slab_init();

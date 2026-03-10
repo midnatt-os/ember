@@ -46,6 +46,29 @@ static devfs_node_t* new_node(devfs_node_t* parent, mount_t* mount, vnode_type_t
     return node;
 }
 
+static int devfs_open(vnode_t* vn, uint32_t oflags, vnode_t** out_vn) {
+    devfs_node_t* n = (devfs_node_t*) vn->private;
+
+    if (vn->type == V_DIR)
+        return -EISDIR;
+    if (!n || !n->device.ops)
+        return -ENODEV;
+
+    vnode_t* opened = vn;
+
+    if (n->device.ops->open) {
+        int err = n->device.ops->open(n, oflags, &opened);
+        if (err)
+            return err;
+        if (!opened)
+            return -EIO;
+    }
+
+    *out_vn = opened;
+    return 0;
+}
+
+
 static int devfs_lookup(vnode_t* dir, const char* name, vnode_t** result) {
     devfs_node_t* d = (devfs_node_t*) dir->private;
 
@@ -92,11 +115,37 @@ static int devfs_getattr(vnode_t* node, stat_t* out) {
     return -ENOSYS;
 }
 
+static int devfs_ioctl(vnode_t* vn, uint64_t req, uintptr_t u_arg) {
+    devfs_node_t* node = (devfs_node_t*) vn->private;
+
+    if (!node || vn->type == V_DIR)
+        return -ENOTTY;
+
+    if (!node->device.ops || !node->device.ops->ioctl)
+        return -ENOTTY;
+
+    return node->device.ops->ioctl(node, req, u_arg);
+}
+
+static poll_mask_t devfs_poll(vnode_t* vn, poll_table_t* pt) {
+    devfs_node_t* node = (devfs_node_t*) vn->private;
+    if (!node || vn->type == V_DIR)
+        return POLLNVAL;
+
+    if (!node->device.ops || !node->device.ops->poll)
+        return 0;
+
+    return node->device.ops->poll(node, pt);
+}
+
 static vnode_ops_t devfs_vnode_ops = {
+    .open = devfs_open,
     .lookup = devfs_lookup,
     .read = devfs_read,
     .write = devfs_write,
     .getattr = devfs_getattr,
+    .ioctl = devfs_ioctl,
+    .poll = devfs_poll,
 };
 
 static int devfs_mount(mount_t* m) {

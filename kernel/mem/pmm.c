@@ -8,6 +8,7 @@
 #include "lib/mem.h"
 #include "mem/hhdm.h"
 #include "mem/page.h"
+#include "sys/init.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -171,7 +172,7 @@ void pmm_free(uintptr_t ptr) {
     spinlock_unlock(&pmm_lock, prev);
 }
 
-void pmm_init() {
+INIT_TARGET(pmm, INIT_STAGE_EARLY, INIT_SCOPE_BSP, INIT_DEPS()) {
     struct limine_memmap_response* memmap = memmap_request.response;
     page_db_early_discover(memmap);
     page_db_early_alloc();
@@ -196,6 +197,6 @@ void pmm_init() {
     pf_use_count = 0;
 
     uint64_t page_db_bytes = (uint64_t) page_db_phys_page_count * PAGE_SIZE;
-    logln(LOG_INFO, "PMM", "Page database reserved %lu MiB (%lu pages)", page_db_bytes / (1024 * 1024), page_db_phys_page_count);
-    logln(LOG_INFO, "PMM", "Initialized with %lu MiB", pf_total_count / 256);
+    logln(LOG_DEBUG, "PMM", "Page database reserved %lu MiB (%lu pages)", page_db_bytes / (1024 * 1024), page_db_phys_page_count);
+    logln(LOG_DEBUG, "PMM", "Initialized with %lu MiB", pf_total_count / 256);
 }

@@ -8,7 +8,7 @@ PHDRS
     text    PT_LOAD FLAGS((1<<2) | (1<<0));
     rodata  PT_LOAD FLAGS((1<<2));
     data    PT_LOAD FLAGS((1<<2) | (1<<1));
-    bss     PT_LOAD FLAGS((1<<2)|(1<<1));
+    bss     PT_LOAD FLAGS((1<<2) | (1<<1));
 }
 
 SECTIONS
@@ -28,7 +28,7 @@ SECTIONS
         __TEXT_START = .;
         *(.text .text.*)
         . = ALIGN(0x1000);
-        __TEXT_END   = .;
+        __TEXT_END = .;
     } :text
 
     . = ALIGN(0x1000);
@@ -36,15 +36,21 @@ SECTIONS
         __RODATA_START = .;
         *(.rodata .rodata.*)
         . = ALIGN(0x1000);
-        __RODATA_END   = .;
+        __RODATA_END = .;
     } :rodata
 
     . = ALIGN(0x1000);
     .data : {
         __DATA_START = .;
         *(.data .data.*)
+
+        . = ALIGN(8);
+        init_targets_start = .;
+        KEEP(*(init_targets))
+        init_targets_end = .;
+
         . = ALIGN(0x1000);
-        __DATA_END   = .;
+        __DATA_END = .;
     } :data
 
     . = ALIGN(0x1000);
@@ -53,7 +59,7 @@ SECTIONS
         *(.bss .bss.*)
         *(COMMON)
         . = ALIGN(0x1000);
-        __BSS_END   = .;
+        __BSS_END = .;
     } :bss
 
     /DISCARD/ : {

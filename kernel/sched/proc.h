@@ -28,6 +28,8 @@ struct process {
     vnode_t* cwd;
     int exit_code;
 
+    vnode_t* ctty_vnode;
+
     list_t threads;
     spinlock_t lock;
 };

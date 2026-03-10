@@ -5,14 +5,14 @@ AlignConsecutiveBitFields: AcrossComments
 AlignConsecutiveDeclarations: None
 AlignConsecutiveMacros: None
 AlignConsecutiveShortCaseStatements:
-  Enabled: true
-  AcrossEmptyLines: false
-  AcrossComments: true
-  AlignCaseColons: false
+    Enabled: true
+    AcrossEmptyLines: false
+    AcrossComments: true
+    AlignCaseColons: false
 AlignEscapedNewlines: LeftWithLastLine
 AlignOperands: Align
 AlignTrailingComments:
-  Kind: Never
+    Kind: Never
 
 AllowAllArgumentsOnNextLine: true
 AllowAllParametersOfDeclarationOnNextLine: false
@@ -42,15 +42,15 @@ BreakStringLiterals: false
 BreakBeforeBraces: Custom
 
 BraceWrapping:
-  AfterCaseLabel: false
-  AfterClass: false
-  AfterControlStatement: MultiLine
-  AfterEnum: false
-  AfterFunction: false
-  AfterStruct: false
-  AfterUnion: false
-  BeforeElse: false
-  BeforeWhile: false
+    AfterCaseLabel: false
+    AfterClass: false
+    AfterControlStatement: MultiLine
+    AfterEnum: false
+    AfterFunction: false
+    AfterStruct: false
+    AfterUnion: false
+    BeforeElse: false
+    BeforeWhile: false
 
 IndentCaseBlocks: false
 IndentCaseLabels: true
@@ -62,14 +62,14 @@ InsertBraces: false
 InsertNewlineAtEOF: true
 
 IntegerLiteralSeparator:
-  Decimal: 0
-  Binary: 0
-  Hex: 0
+    Decimal: 0
+    Binary: 0
+    Hex: 0
 
 KeepEmptyLines:
-  AtEndOfFile: false
-  AtStartOfBlock: false
-  AtStartOfFile: false
+    AtEndOfFile: false
+    AtStartOfBlock: false
+    AtStartOfFile: false
 
 PointerAlignment: Left
 QualifierAlignment: Custom
@@ -104,7 +104,7 @@ PPIndentWidth: 0
 Language: Cpp # For C in reality.
 MaxEmptyLinesToKeep: 2
 
-Cpp11BracedListStyle: false
+Cpp11BracedListStyle: true
 
 # Includes
 SortIncludes: CaseInsensitive

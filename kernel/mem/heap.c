@@ -5,6 +5,7 @@
 #include "common/log.h"
 #include "mem/page.h"
 #include "mem/slab.h"
+#include "sys/init.h"
 
 #include <stddef.h>
 
@@ -14,11 +15,39 @@
 
 
 static const char* const cache_names_8x[] = {
-    "heap-8", "heap-16", "heap-24", "heap-32", "heap-40", "heap-48", "heap-56", "heap-64", "heap-72", "heap-80", "heap-88", "heap-96", "heap-104", "heap-112", "heap-120",
+    "heap-8",
+    "heap-16",
+    "heap-24",
+    "heap-32",
+    "heap-40",
+    "heap-48",
+    "heap-56",
+    "heap-64",
+    "heap-72",
+    "heap-80",
+    "heap-88",
+    "heap-96",
+    "heap-104",
+    "heap-112",
+    "heap-120",
 };
 
 static const size_t cache_sizes_8x[] = {
-    8, 16, 24, 32, 40, 48, 56, 64, 72, 80, 88, 96, 104, 112, 120,
+    8,
+    16,
+    24,
+    32,
+    40,
+    48,
+    56,
+    64,
+    72,
+    80,
+    88,
+    96,
+    104,
+    112,
+    120,
 };
 
 static const char* const cache_names_128x[] = {
@@ -88,4 +117,8 @@ void heap_init() {
         caches_other[i] = slab_create_cache(cache_names_other[i], cache_sizes_other[i], 2 * PAGE_SIZE);
 
     logln(LOG_INFO, "HEAP", "Initialized");
+}
+
+INIT_TARGET(heap, INIT_STAGE_EARLY, INIT_SCOPE_BSP, INIT_DEPS("slab")) {
+    heap_init();
 }

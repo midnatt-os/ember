@@ -1,5 +1,6 @@
 #pragma once
 
+#include "io/poll.h"
 #include "lib/hashmap.h"
 
 #include <stddef.h>
@@ -49,6 +50,7 @@ typedef int64_t ssize_t;
 typedef int64_t off_t;
 
 struct vnode_ops {
+    int (*open)(vnode_t* node, uint32_t oflags, vnode_t** out_vnode);
     int (*lookup)(vnode_t* dir, const char* name, vnode_t** result);
     int (*create)(vnode_t* dir, const char* name);
     int (*mkdir)(vnode_t* dir, const char* name);
@@ -57,6 +59,8 @@ struct vnode_ops {
     ssize_t (*read)(vnode_t* file, void* buffer, size_t count, off_t offset);
     ssize_t (*write)(vnode_t* file, const void* buffer, size_t count, off_t offset);
     int (*getattr)(vnode_t* node, stat_t* st);
+    int (*ioctl)(vnode_t* node, uint64_t req, uintptr_t u_arg);
+    poll_mask_t (*poll)(vnode_t* node, poll_table_t* pt);
 };
 
 struct mount_ops {
@@ -76,21 +80,28 @@ typedef struct {
     const char* path;
 } path_t;
 
-#define ABS_PATH(p) ((path_t) { .base = nullptr, .path = (p) })
-#define REL_PATH(b, p) ((path_t) { .base = (b), .path = (p) })
+#define ABS_PATH(p) ((path_t) {.base = nullptr, .path = (p)})
+#define REL_PATH(b, p) ((path_t) {.base = (b), .path = (p)})
 
 // Returns the current root vnode (may be nullptr if no root is mounted yet).
 vnode_t* vfs_get_root();
 
+#define VFS_LOOKUP_FOLLOW_LAST (1u << 0)
+
+int vfs_lookup_ext(path_t path, uint32_t flags, vnode_t** result);
 int vfs_lookup(path_t path, vnode_t** result);
+
 int vfs_create(path_t path);
 int vfs_mkdir(path_t path);
 ssize_t vfs_read(vnode_t* file, void* buffer, size_t count, off_t offset);
 ssize_t vfs_write(vnode_t* vnode, const void* buffer, size_t count, off_t offset);
 int vfs_getattr(vnode_t* node, stat_t* st);
+int vfs_ioctl(vnode_t* node, uint64_t req, uintptr_t u_arg);
 
 int vfs_symlink(path_t linkpath, const char* target);
 ssize_t vfs_readlink(vnode_t* link, char* buf, size_t buflen);
+
+int vfs_open(vnode_t* vn, uint32_t oflags, vnode_t** out_vn);
 
 int vfs_register(vfs_fstype_t* fs_type);
 int vfs_mount(const char* fstype_name, const char* target_path);

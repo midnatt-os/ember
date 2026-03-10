@@ -7,6 +7,7 @@
 #include "lib/list.h"
 #include "mem/page.h"
 #include "mem/vm.h"
+#include "sys/init.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -133,7 +134,7 @@ object_cache_t* slab_create_cache(const char* name, size_t object_size, size_t s
     return new;
 }
 
-void slab_init() {
+INIT_TARGET(slab, INIT_STAGE_EARLY, INIT_SCOPE_BSP, INIT_DEPS("vm")) {
     cache_cache = (object_cache_t) {
         .name = "cache",
         .object_size = sizeof(object_cache_t),

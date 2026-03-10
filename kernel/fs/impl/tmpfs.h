@@ -20,6 +20,11 @@ struct tmpfs_node {
             void* base;
             size_t size;
         } file;
+
+        struct {
+            char* target;
+            size_t len;
+        } link;
     };
     list_node_t dir_node;
 };

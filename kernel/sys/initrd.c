@@ -5,8 +5,10 @@
 #include "common/log.h"
 #include "fs/impl/tmpfs.h"
 #include "fs/vfs.h"
+#include "lib/mem.h"
+#include "lib/string.h"
+#include "mem/heap.h"
 
-#include <lib/string.h>
 #include <stdint.h>
 
 #define CPIO_MAGIC_OK(magic) ((magic)[0] == '0' && (magic)[1] == '7' && (magic)[2] == '0' && (magic)[3] == '7' && (magic)[4] == '0' && (magic)[5] == '1')
@@ -121,9 +123,23 @@ void initrd_unpack(void* addr, size_t size) {
             }
 
             case S_ISLNK: {
-                // logln(LOG_DEBUG, "INITRD", "LINK: /%s (%lu bytes)", filename, filesize);
+                // CPIO newc: symlink target is stored in file_data, length = filesize
+                const char* link_bytes = (const char*) file_data;
+
+                // Make a NUL-terminated string for vfs_symlink()
+                char* target = heap_alloc(filesize + 1);
+                ASSERT(target);
+
+                if (filesize > 0)
+                    memcpy(target, link_bytes, filesize);
+                target[filesize] = '\0';
+
+                ASSERT(vfs_symlink(target_path, target) == 0);
+
+                heap_free(target, filesize + 1);
                 break;
             }
+
 
             default: {
                 logln(LOG_DEBUG, "INITRD", "FILE_TYPE ???");

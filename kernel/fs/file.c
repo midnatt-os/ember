@@ -65,8 +65,9 @@ ssize_t file_read(file_t* file, void* buf, size_t count) {
 }
 
 ssize_t file_write(file_t* file, const void* buf, size_t count) {
-    (void) buf;
-    (void) count;
+    if (!file || (!buf && count != 0))
+        return -EINVAL;
+
     mutex_lock(&file->mutex);
 
     int mode = file->flags & O_ACCMODE;
@@ -75,23 +76,29 @@ ssize_t file_write(file_t* file, const void* buf, size_t count) {
         return -EBADF;
     }
 
-    // Handle O_APPEND: if set, always write at the end
+    if (count == 0) {
+        mutex_unlock(&file->mutex);
+        return 0;
+    }
+
+    // Handle O_APPEND: always write at end
     if (file->flags & O_APPEND) {
         stat_t st;
-        vfs_getattr(file->vnode, &st);
+        int err = vfs_getattr(file->vnode, &st);
+        if (err != 0) {
+            mutex_unlock(&file->mutex);
+            return err;
+        }
         file->offset = st.size;
     }
 
-    // ssize_t result = vfs_write(file->vnode, buf, count, file->offset);
+    ssize_t result = vfs_write(file->vnode, buf, count, (off_t) file->offset);
 
-    /*if (result > 0) {
-        file->offset += result;
-    }*/
+    if (result > 0)
+        file->offset += (uintmax_t) result;
 
     mutex_unlock(&file->mutex);
-    ASSERT_UNREACHABLE(); // TODO: NOT IMPLEMENTED
-
-    return -1;
+    return result;
 }
 
 off_t file_seek(file_t* file, off_t offset, int whence) {
@@ -127,6 +134,16 @@ off_t file_seek(file_t* file, off_t offset, int whence) {
     mutex_unlock(&file->mutex);
 
     return new_offset;
+}
+
+poll_mask_t file_poll(file_t* file, poll_table_t* pt) {
+    if (!file || !file->vnode || !file->vnode->ops)
+        return POLLNVAL;
+
+    if (file->vnode->ops->poll)
+        return file->vnode->ops->poll(file->vnode, pt);
+
+    return POLLIN | POLLOUT;
 }
 
 void file_init() {
